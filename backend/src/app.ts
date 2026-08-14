@@ -1,41 +1,24 @@
 import express from "express";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
+import type { ArticleBlock } from "../../shared/types.ts"
+import cors from "cors";
 
 const app = express();
 const PORT = 3000;
-
+app.use(cors({
+  origin: "http://localhost:5173"
+}));
 app.use(express.json());
 
 app.get("/api/hello", (_req, res) => {
     res.json({ message: "Hello from Express" });
 });
 
-type ArticleBlock = {
-    type: String,
-    src?: String,
-    sourceIndex: number,
-    alt?: String,
-    level?: Number,
-    html?: String
-}
-
 type ImageCandidate = {
     url: string;
     width?: number;
 };
-
-function blocksEqual(a: ArticleBlock, b: ArticleBlock): boolean {
-    if (a.type !== b.type) {
-        return false;
-    }
-
-    if (a.type === "image") {
-        return a.src === b.src;
-    }
-
-    return a.html === b.html;
-}
 
 function blockKey(block: ArticleBlock): string {
     if (block.type === "image") {
@@ -137,11 +120,19 @@ function getImageSrc(element: Element, pageUrl: string): string | null {
 }
 
 function sanitizeHtml(html: string) {
-    return html.replace(/[\r\n\t]/g, "").replace(/\\"/g, '"');
-    
+    return html.replace(/[\r\n\t]/g, "")
+               .replace(/\\"/g, '"');
 }
 
-function extractBlocks(root: Element, pageUrl: string): ArticleBlock[] {
+function isEmptyBlock(element: Element): boolean {
+    const text = element.textContent
+        ?.replace(/\u00A0/g, " ")
+        .trim();
+
+    return !text && element.querySelector("img") === null;
+}
+
+function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): ArticleBlock[] {
     root.querySelectorAll("span").forEach((span) => {
         span.replaceWith(...Array.from(span.childNodes));
     });
@@ -150,12 +141,16 @@ function extractBlocks(root: Element, pageUrl: string): ArticleBlock[] {
     let sourceIndex = 0;
 
     function pushBlock(block: Omit<ArticleBlock, "sourceIndex">) {
-        blocks.push({
-            ...block,
-            sourceIndex,
-        });
+        if (isOriginal) {
+            blocks.push({
+                ...block,
+                sourceIndex,
+            });
 
-        sourceIndex++;
+            sourceIndex++;
+        } else {
+            blocks.push(block);
+        }
     }
 
     function walkHtml(element: Element) {
@@ -184,7 +179,7 @@ function extractBlocks(root: Element, pageUrl: string): ArticleBlock[] {
                 walkHtml(images[0]!);
                 return;
             }
-            if (element.innerHTML.length == 0) {
+            if (isEmptyBlock(element)) {
                 return;
             }
             pushBlock({
@@ -245,6 +240,15 @@ function blocksToHtml(blocks: ArticleBlock[]) {
   return `<article>${inner}</article>`;
 }
 
+function imageFilename(src: string): string {
+  const url = new URL(src);
+  return url.pathname.split("/").pop() ?? "";
+}
+
+function sameUnderlyingImage(a: string, b: string): boolean {
+  return imageFilename(a) === imageFilename(b);
+}
+
 app.post("/api/extract", async (req, res) => {
     try {
         const url = req.body.url;
@@ -264,16 +268,34 @@ app.post("/api/extract", async (req, res) => {
             });
         }
 
-        const originalContent = extractBlocks(originalDom.window.document.body, url);
-        const articleContent = extractBlocks(articleDOM.window.document.body, url);
+        const originalContent = extractBlocks(originalDom.window.document.body, url, true);
+        const articleContent = extractBlocks(articleDOM.window.document.body, url, false);
         for (const articleBlock of articleContent) {
             const match = originalContent.find(
                 originalBlock =>
                     blockKey(originalBlock) === blockKey(articleBlock)
             );
 
-            if (match) {
+            if (match?.sourceIndex !== undefined) {
                 articleBlock.sourceIndex = match.sourceIndex;
+            }
+        }
+        for (const articleBlock of articleContent) {
+            if (articleBlock.type !== "image") {
+                continue;
+            }
+
+            const match = originalContent.find(
+                (originalBlock) =>
+                originalBlock.type === "image" &&
+                sameUnderlyingImage(articleBlock.src!, originalBlock.src!
+            ));
+
+            if (match?.src) {
+                articleBlock.src = match.src;
+                if (match?.sourceIndex !== undefined) {
+                    articleBlock.sourceIndex = match.sourceIndex;
+                }
             }
         }
         const readabilityKeys = new Set(
@@ -307,7 +329,7 @@ app.post("/api/send", (req, res) => {
     const finalContent = [
     ...articleContent,
     ...selectedMissingContent
-    ].sort((a, b) => a.sourceIndex - b.sourceIndex);
+    ].sort((a, b) => a.sourceIndex! - b.sourceIndex!);
     const html = blocksToHtml(finalContent);
     res.json({
         message: "ready to send",
