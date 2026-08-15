@@ -298,9 +298,13 @@ function classifyMissingBlock(block: ArticleBlock, articleTitle: string): "conte
         return "other";
     }
 
+    if (block.type === "heading" && text.length > 0) {
+        return "content";
+    }
+
     // Substantial textual content
     if (
-        ["paragraph", "heading", "blockquote", "ul", "ol"].includes(block.type) &&
+        ["paragraph", "blockquote", "ul", "ol"].includes(block.type) &&
         text.length > 40
     ) {
         return "content";
@@ -379,16 +383,6 @@ app.post("/api/extract", async (req, res) => {
             block.readIndex = index;
         });
         for (const articleBlock of articleContent) {
-            const match = originalContent.find(
-                originalBlock =>
-                    blockKey(originalBlock) === blockKey(articleBlock)
-            );
-
-            if (match?.sourceIndex !== undefined) {
-                articleBlock.sourceIndex = match.sourceIndex;
-            }
-        }
-        for (const articleBlock of articleContent) {
             let match = originalContent.find(
                 originalBlock =>
                     blockKey(originalBlock) === blockKey(articleBlock)
@@ -459,7 +453,6 @@ app.post("/api/send", async (req, res) => {
         }
 
         const html = blocksToHtml(finalContent, title);
-        console.log(html);
 
         const instapaperUrl =
             "https://www.instapaper.com/api/1/bookmarks/add";

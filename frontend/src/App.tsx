@@ -17,6 +17,7 @@ function App() {
         block => block.category === "other"
     );
     const [selectedBlocks, setSelectedBlocks] = useState<ArticleBlock[]>([]);
+    const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
     const displayedBlocks = [
         ...articleBlocks,
         ...selectedBlocks,
@@ -82,24 +83,50 @@ function App() {
         setDisableSendToInstapaperButton(false);
     }
 
-    function toggleMissingBlock(block: ArticleBlock) {
+    function toggleMissingBlock(
+        block: ArticleBlock,
+        index: number,
+        shiftKey: boolean
+    ) {
+        if (shiftKey && lastSelectedIndex !== null) {
+            const start = Math.min(lastSelectedIndex, index);
+            const end = Math.max(lastSelectedIndex, index);
+
+            const range = likelyMissing.slice(start, end + 1);
+
+            setSelectedBlocks((current) => {
+                const existing = new Set(
+                    current.map(block => block.sourceIndex)
+                );
+
+                const newBlocks = range.filter(
+                    block => !existing.has(block.sourceIndex)
+                );
+
+                return [...current, ...newBlocks];
+            });
+
+            setLastSelectedIndex(index);
+            return;
+        }
+
         setSelectedBlocks((current) => {
             const isSelected = current.some(
-                (selected) =>
+                selected =>
                     selected.sourceIndex === block.sourceIndex
             );
 
             if (isSelected) {
-                // Already selected → remove it
                 return current.filter(
-                    (selected) =>
+                    selected =>
                         selected.sourceIndex !== block.sourceIndex
                 );
             }
 
-            // Not selected → add it
             return [...current, block];
         });
+
+        setLastSelectedIndex(index);
     }
 
     return (
@@ -142,7 +169,13 @@ function App() {
                                     selected =>
                                         selected.sourceIndex === block.sourceIndex
                                 )}
-                                onToggle={toggleMissingBlock}
+                                onToggle={(block, shiftKey) =>
+                                    toggleMissingBlock(
+                                        block,
+                                        index,
+                                        shiftKey
+                                    )
+                                }
                             />
                         ))}
                         {likelyJunk.length > 0 && (
@@ -159,7 +192,13 @@ function App() {
                                             selected =>
                                                 selected.sourceIndex === block.sourceIndex
                                         )}
-                                        onToggle={toggleMissingBlock}
+                                        onToggle={(block, shiftKey) =>
+                                            toggleMissingBlock(
+                                                block,
+                                                index,
+                                                shiftKey
+                                            )
+                                        }
                                     />
                                 ))}
                             </details>

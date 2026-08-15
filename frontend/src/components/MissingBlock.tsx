@@ -5,7 +5,10 @@ import './ArticleBlock.css';
 type MissingBlockProps = {
     block: ArticleBlock;
     selected: boolean;
-    onToggle: (block: ArticleBlock) => void;
+    onToggle: (
+        block: ArticleBlock,
+        shiftKey: boolean
+    ) => void;
 };
 
 function MissingBlockView({
@@ -18,7 +21,12 @@ function MissingBlockView({
             <input className="checkbox"
                 type="checkbox"
                 checked={selected}
-                onChange={() => onToggle(block)}
+                onChange={(e) =>
+                    onToggle(
+                        block,
+                        (e.nativeEvent as MouseEvent).shiftKey
+                    )
+                }
             />
 
             <ArticleBlockView block={block} />
