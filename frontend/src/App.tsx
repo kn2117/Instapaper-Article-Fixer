@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import './index.css'
 import type { ArticleBlock } from "../../shared/types";
-import { processArticle } from './utils/urlUtils';
+import { processArticle, sendArticleToInstapaper } from './utils/urlUtils';
 import ArticleBlockView from './components/ArticleBlock';
 import MissingBlockView from './components/MissingBlock';
 
 function App() {
+    const [url, setUrl] = useState("");
     const [title, setTitle] = useState("");
     const [articleBlocks, setArticleBlocks] = useState<ArticleBlock[]>([]);
     const [missingBlocks, setMissingBlocks] = useState<ArticleBlock[]>([]);
@@ -20,8 +21,9 @@ function App() {
         return aIndex - bIndex;
     });
     const [disableSubmitButton, setDisableSubmitButton] = useState<boolean>(false);
+    const [disableSendToInstapaperButton, setDisableSendToInstapaperButton] = useState<boolean>(false);
 
-    async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
+    async function handleProcessWebpageSubmit(e: React.SubmitEvent<HTMLFormElement>) {
         setDisableSubmitButton(true);
         e.preventDefault();
 
@@ -43,7 +45,16 @@ function App() {
         }
 
         await processArticle(submittedUrl, setTitle, setArticleBlocks, setMissingBlocks);
+        setUrl(submittedUrl);
         setDisableSubmitButton(false);
+    }
+    
+    async function handleSendToInstapaperSubmit(e: React.MouseEvent<HTMLButtonElement>) {
+        setDisableSendToInstapaperButton(true);
+        e.preventDefault();
+
+        await sendArticleToInstapaper(url, title, displayedBlocks);
+        setDisableSendToInstapaperButton(false);
     }
 
     function toggleMissingBlock(block: ArticleBlock) {
@@ -68,7 +79,7 @@ function App() {
 
     return (
         <>
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleProcessWebpageSubmit}>
                 <input
                     type="url"
                     name="url"
@@ -107,6 +118,11 @@ function App() {
                         />
                     ))}
                 </div>
+            )}
+            {displayedBlocks.length > 0 && (
+                <button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton}>
+                    Send to Instapaper
+                </button>
             )}
         </>
     )

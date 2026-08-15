@@ -14,3 +14,20 @@ export async function processArticle(url: string, setTitle: React.Dispatch<React
     setArticleContent(responseBody.articleContent);
     setMissingContent(responseBody.missingContent);
 }
+
+export async function sendArticleToInstapaper(url: string, title: string, displayedBlocks: ArticleBlock[]) {
+    const apiData = {
+        url: url,
+        title: title,
+        finalContent: displayedBlocks
+    }
+    const response = await fetch(`${import.meta.env.VITE_EXTRACT_API}/api/send`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(apiData)
+    });
+    const responseBody = await response.json();
+    console.log(responseBody.html);
+}

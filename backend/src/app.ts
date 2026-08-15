@@ -3,6 +3,28 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type { ArticleBlock } from "../../shared/types.ts"
 import cors from "cors";
+import OAuth from "oauth-1.0a";
+import crypto from "crypto";
+import "dotenv/config";
+
+const oauth = new OAuth({
+    consumer: {
+        key: process.env.INSTAPAPER_CONSUMER_KEY!,
+        secret: process.env.INSTAPAPER_CONSUMER_SECRET!,
+    },
+    signature_method: "HMAC-SHA1",
+    hash_function(baseString, key) {
+        return crypto
+            .createHmac("sha1", key)
+            .update(baseString)
+            .digest("base64");
+    },
+});
+
+const token = {
+    key: process.env.INSTAPAPER_OAUTH_TOKEN!,
+    secret: process.env.INSTAPAPER_OAUTH_SECRET!,
+};
 
 const app = express();
 const PORT = 3000;
@@ -321,22 +343,80 @@ app.post("/api/extract", async (req, res) => {
     }
 });
 
-app.post("/api/send", (req, res) => {
-    const url = req.body.url as string;
-    const title = req.body.title as string;
-    const articleContent = req.body.articleContent as ArticleBlock[];
-    const selectedMissingContent = req.body.selectedMissingContent as ArticleBlock[];
-    const finalContent = [
-    ...articleContent,
-    ...selectedMissingContent
-    ].sort((a, b) => a.sourceIndex! - b.sourceIndex!);
-    const html = blocksToHtml(finalContent);
-    res.json({
-        message: "ready to send",
-        url,
-        title,
-        html,
-    });
+app.post("/api/send", async (req, res) => {
+    try {
+        const url = req.body.url as string;
+        const title = req.body.title as string;
+        const finalContent = req.body.finalContent as ArticleBlock[];
+
+        if (!url || !title || !Array.isArray(finalContent)) {
+            return res.status(400).json({
+                error: "Invalid request body",
+            });
+        }
+
+        const html = blocksToHtml(finalContent);
+
+        const instapaperUrl =
+            "https://www.instapaper.com/api/1/bookmarks/add";
+
+        const body = {
+            url,
+            title,
+            resolve_final_url: "0",
+            content: html,
+        };
+
+        const requestData = {
+            url: instapaperUrl,
+            method: "POST",
+            data: body,
+        };
+
+        const authHeader =
+            oauth.toHeader(
+                oauth.authorize(requestData, token)
+            );
+
+        const formData = new URLSearchParams(body);
+
+        const response = await fetch(instapaperUrl, {
+            method: "POST",
+            headers: {
+                ...authHeader,
+                "Content-Type":
+                    "application/x-www-form-urlencoded",
+            },
+            body: formData.toString(),
+        });
+
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            console.error(
+                "Instapaper error:",
+                response.status,
+                responseText
+            );
+
+            return res.status(502).json({
+                error: "Instapaper request failed",
+                status: response.status,
+                details: responseText,
+            });
+        }
+
+        res.json({
+            message: "Sent to Instapaper",
+            response: responseText,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            error: "Failed to send article to Instapaper",
+        });
+    }
 });
 
 app.listen(PORT, () => {
