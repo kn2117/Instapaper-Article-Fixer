@@ -1,4 +1,5 @@
 import type { ArticleBlock } from "../../../shared/types";
+import './ArticleBlock.css'
 
 type Props = {
   block: ArticleBlock;
@@ -8,7 +9,7 @@ function ArticleBlockView({ block }: Props) {
   switch (block.type) {
     case "paragraph":
       return (
-        <p
+        <p className="paragraphBlock"
           dangerouslySetInnerHTML={{
             __html: block.html!,
           }}
@@ -25,7 +26,7 @@ function ArticleBlockView({ block }: Props) {
                 | "h6";
 
         return (
-            <Tag
+            <Tag className="headerBlock"
             dangerouslySetInnerHTML={{
                 __html: block.html!,
             }}
@@ -35,7 +36,7 @@ function ArticleBlockView({ block }: Props) {
 
     case "image":
       return (
-        <p>
+        <p className="imageBlock">
             <img
               src={block.src}
               alt={block.alt}
@@ -45,7 +46,7 @@ function ArticleBlockView({ block }: Props) {
 
     case "ul":
       return (
-        <ul
+        <ul className="unorderedListBlock"
           dangerouslySetInnerHTML={{
             __html: block.html!,
           }}
@@ -54,7 +55,7 @@ function ArticleBlockView({ block }: Props) {
 
     case "ol":
       return (
-        <ol
+        <ol className="orderedListBlock"
           dangerouslySetInnerHTML={{
             __html: block.html!,
           }}
@@ -63,7 +64,7 @@ function ArticleBlockView({ block }: Props) {
 
     case "blockquote":
       return (
-        <blockquote
+        <blockquote className="blockquoteBlock"
           dangerouslySetInnerHTML={{
             __html: block.html!,
           }}

@@ -1,7 +1,7 @@
 import express from "express";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import type { ArticleBlock } from "../../shared/types.ts"
+import type { ArticleBlock, MissingBlockCategory } from "../../shared/types.ts"
 import cors from "cors";
 import OAuth from "oauth-1.0a";
 import crypto from "crypto";
@@ -29,7 +29,7 @@ const token = {
 const app = express();
 const PORT = 3000;
 app.use(cors({
-  origin: "http://localhost:5173"
+    origin: "http://localhost:5173"
 }));
 app.use(express.json());
 
@@ -47,7 +47,7 @@ function blockKey(block: ArticleBlock): string {
         return `image:${block.src}`;
     }
 
-    return `${block.type}:${block.html?.trim() ?? ""}`;
+    return `${block.type}:${block.text ?? ""}`;
 }
 
 function getImageCandidates(element: Element, pageUrl: string): ImageCandidate[] {
@@ -143,7 +143,7 @@ function getImageSrc(element: Element, pageUrl: string): string | null {
 
 function sanitizeHtml(html: string) {
     return html.replace(/[\r\n\t]/g, "")
-               .replace(/\\"/g, '"');
+        .replace(/\\"/g, '"');
 }
 
 function isEmptyBlock(element: Element): boolean {
@@ -152,6 +152,13 @@ function isEmptyBlock(element: Element): boolean {
         .trim();
 
     return !text && element.querySelector("img") === null;
+}
+
+function normalizedText(element: Element): string {
+    return element.textContent
+        ?.replace(/\u00A0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() ?? "";
 }
 
 function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): ArticleBlock[] {
@@ -177,7 +184,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
 
     function walkHtml(element: Element) {
         const tag = element.tagName.toLowerCase();
-        const tagsToSkip = ["script", "style", "nav", "form", "bottom", "iframe"];
+        const tagsToSkip = ["script", "style", "nav", "form", "button", "iframe"];
         if (tagsToSkip.includes(tag)) {
             return;
         }
@@ -191,6 +198,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
                     type: "image",
                     src: src,
                     alt: element.getAttribute("alt") ?? "",
+                    inHeaderOrFooter: element.closest("header, footer") !== null
                 });
             }
             return;
@@ -207,6 +215,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
             pushBlock({
                 type: "paragraph",
                 html: element.innerHTML,
+                text: normalizedText(element),
             });
             return;
         }
@@ -215,6 +224,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
                 type: "heading",
                 level: Number(tag[1]),
                 html: sanitizeHtml(element.innerHTML),
+                text: normalizedText(element),
             });
             return;
         }
@@ -222,6 +232,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
             pushBlock({
                 type: tag,
                 html: sanitizeHtml(element.innerHTML),
+                text: normalizedText(element),
             });
             return;
         }
@@ -235,40 +246,112 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
 }
 
 function blocksToHtml(blocks: ArticleBlock[], title: string) {
-  const inner = blocks.map((block) => {
-    if (block.type === "image") {
-      return `<p><img src="${block.src}" alt="${block.alt ?? ""}"></p>`;
-    }
+    const inner = blocks.map((block) => {
+        if (block.type === "image") {
+            return `<p><img src="${block.src}" alt="${block.alt ?? ""}"></p>`;
+        }
 
-    if (block.type === "heading") {
-      return `<h${block.level}>${block.html ?? ""}</h${block.level}>`;
-    }
+        if (block.type === "heading") {
+            return `<h${block.level}>${block.html ?? ""}</h${block.level}>`;
+        }
 
-    if (block.type === "paragraph") {
-      return `<p>${block.html ?? ""}</p>`;
-    }
+        if (block.type === "paragraph") {
+            return `<p>${block.html ?? ""}</p>`;
+        }
 
-    if (block.type === "ul" || block.type === "ol") {
-      return `<${block.type}>${block.html ?? ""}</${block.type}>`;
-    }
+        if (block.type === "ul" || block.type === "ol") {
+            return `<${block.type}>${block.html ?? ""}</${block.type}>`;
+        }
 
-    if (block.type === "blockquote") {
-      return `<blockquote>${block.html ?? ""}</blockquote>`;
-    }
+        if (block.type === "blockquote") {
+            return `<blockquote>${block.html ?? ""}</blockquote>`;
+        }
 
-    return "";
-  }).join("");
+        return "";
+    }).join("");
 
-  return `<article><h1>${title}</h1>${inner}</article>`;
+    return `<article><h1>${title}</h1>${inner}</article>`;
 }
 
 function imageFilename(src: string): string {
-  const url = new URL(src);
-  return url.pathname.split("/").pop() ?? "";
+    const url = new URL(src);
+    return url.pathname.split("/").pop() ?? "";
 }
 
 function sameUnderlyingImage(a: string, b: string): boolean {
-  return imageFilename(a) === imageFilename(b);
+    return imageFilename(a) === imageFilename(b);
+}
+
+function classifyMissingBlock(block: ArticleBlock, articleTitle: string): "content" | "other" {
+    // Images were classified using their DOM location
+    if (block.type === "image") {
+        return block.inHeaderOrFooter ? "other" : "content";
+    }
+
+    const text = block.text?.trim() ?? "";
+
+    // Exact article title
+    if (
+        block.type === "heading" &&
+        text.toLowerCase() === articleTitle.trim().toLowerCase()
+    ) {
+        return "other";
+    }
+
+    // Substantial textual content
+    if (
+        ["paragraph", "heading", "blockquote", "ul", "ol"].includes(block.type) &&
+        text.length > 40
+    ) {
+        return "content";
+    }
+
+    return "other";
+}
+
+function isOriginalBlockCovered(
+    originalBlock: ArticleBlock,
+    articleContent: ArticleBlock[]
+): boolean {
+    // Images can keep using normal matching
+    if (originalBlock.type === "image") {
+        return articleContent.some(
+            articleBlock =>
+                blockKey(articleBlock) === blockKey(originalBlock)
+        );
+    }
+
+    if (!originalBlock.text) {
+        return false;
+    }
+
+    const matchingBlocks = articleContent
+        .filter(
+            articleBlock =>
+                articleBlock.sourceIndex === originalBlock.sourceIndex &&
+                articleBlock.text
+        )
+        .sort(
+            (a, b) =>
+                (a.readIndex ?? 0) -
+                (b.readIndex ?? 0)
+        );
+
+    if (matchingBlocks.length === 0) {
+        return false;
+    }
+
+    const combinedText = matchingBlocks
+        .map(block => block.text)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const originalText = originalBlock.text
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return combinedText === originalText;
 }
 
 app.post("/api/extract", async (req, res) => {
@@ -292,6 +375,9 @@ app.post("/api/extract", async (req, res) => {
 
         const originalContent = extractBlocks(originalDom.window.document.body, url, true);
         const articleContent = extractBlocks(articleDOM.window.document.body, url, false);
+        articleContent.forEach((block, index) => {
+            block.readIndex = index;
+        });
         for (const articleBlock of articleContent) {
             const match = originalContent.find(
                 originalBlock =>
@@ -303,30 +389,47 @@ app.post("/api/extract", async (req, res) => {
             }
         }
         for (const articleBlock of articleContent) {
-            if (articleBlock.type !== "image") {
-                continue;
+            let match = originalContent.find(
+                originalBlock =>
+                    blockKey(originalBlock) === blockKey(articleBlock)
+            );
+
+            if (!match && articleBlock.text) {
+                match = originalContent.find(originalBlock => {
+                    if (
+                        originalBlock.type !== articleBlock.type ||
+                        !originalBlock.text
+                    ) {
+                        return false;
+                    }
+
+                    return originalBlock.text.includes(articleBlock.text!);
+                });
             }
 
-            const match = originalContent.find(
-                (originalBlock) =>
-                originalBlock.type === "image" &&
-                sameUnderlyingImage(articleBlock.src!, originalBlock.src!
-            ));
-
-            if (match?.src) {
-                articleBlock.src = match.src;
-                if (match?.sourceIndex !== undefined) {
-                    articleBlock.sourceIndex = match.sourceIndex;
-                }
+            if (match?.sourceIndex !== undefined) {
+                articleBlock.sourceIndex = match.sourceIndex;
             }
         }
         const readabilityKeys = new Set(
             articleContent.map(blockKey)
         );
 
-        const missingContent = originalContent.filter(
-            block => !readabilityKeys.has(blockKey(block))
-        );
+        const missingContent = originalContent
+            .filter(
+                block =>
+                    !isOriginalBlockCovered(
+                        block,
+                        articleContent
+                    )
+            )
+            .map(block => ({
+                ...block,
+                category: classifyMissingBlock(
+                    block,
+                    article.title!
+                ),
+            }));
 
         res.json({
             url,

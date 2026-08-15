@@ -1,5 +1,6 @@
 import type { ArticleBlock } from "../../../shared/types";
 import ArticleBlockView from "./ArticleBlock";
+import './ArticleBlock.css';
 
 type MissingBlockProps = {
     block: ArticleBlock;
@@ -13,15 +14,15 @@ function MissingBlockView({
     onToggle,
 }: MissingBlockProps) {
     return (
-        <div>
-            <input
+        <label className="missingBlock">
+            <input className="checkbox"
                 type="checkbox"
                 checked={selected}
                 onChange={() => onToggle(block)}
             />
 
             <ArticleBlockView block={block} />
-        </div>
+        </label>
     );
 }
 

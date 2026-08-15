@@ -1,0 +1,53 @@
+:root {
+    padding: 20px 1vw;
+}
+
+.articleUrlSubmission {
+    display: flex;
+    height: 2.5rem;
+    gap: 10px;
+}
+
+.articleUrlTextbox {
+    flex: 1;
+    border: 1px solid #000000;
+    border-radius: 100px;
+    padding: 10px;
+}
+
+.mainContent {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+}
+
+.sendToInstapaperButton {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    height: 2.5rem;
+    width: 10rem;
+    cursor: pointer;
+    background-color: rgb(52, 120, 246);
+    color: white;
+    box-shadow: none;
+    border: none;
+    border-radius: 100px;
+}
+
+.articleUrlSubmitButton {
+    cursor: pointer;
+    background-color: rgb(52, 120, 246);
+    color: white;
+    box-shadow: none;
+    border: none;
+    border-radius: 100px;
+}
+
+.displayedBlocks {
+    flex: 0.75;
+}
+
+.missingBlocks {
+    flex: 0.25;
+}

@@ -1,0 +1,54 @@
+.missingBlock, .paragraphBlock, .headerBlock, .imageBlock, .unorderedListBlock, .orderedListBlock, .blockquoteBlock {
+    border: 1px solid #000000;
+    border-radius: 20px;
+    padding: 10px;
+}
+
+.imageBlock img {
+    max-width: 100%;
+    height: auto;
+}
+
+.orderedListBlock, .unorderedListBlock {
+    margin-left: 0px;
+    padding-left: 1.75rem;
+}
+
+.missingBlock {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    margin: 10px;
+}
+
+.missingBlock .paragraphBlock,
+.missingBlock .headerBlock,
+.missingBlock .imageBlock,
+.missingBlock .unorderedListBlock,
+.missingBlock .orderedListBlock,
+.missingBlock .blockquoteBlock {
+    border: none;
+    padding: 0;
+}
+
+.missingBlock .orderedListBlock, .missingBlock .unorderedListBlock {
+    padding-left: 1.5rem;
+}
+
+.missingBlock > p {
+    flex: 1;
+    min-width: 0;
+}
+
+.imageBlock img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.checkbox {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
