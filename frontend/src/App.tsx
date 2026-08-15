@@ -44,6 +44,12 @@ function App() {
             return;
         }
 
+        setTitle("");
+        setArticleBlocks([]);
+        setMissingBlocks([]);
+        setSelectedBlocks([]);
+        setUrl("");
+
         await processArticle(submittedUrl, setTitle, setArticleBlocks, setMissingBlocks);
         setUrl(submittedUrl);
         setDisableSubmitButton(false);

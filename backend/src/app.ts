@@ -234,7 +234,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
     return blocks;
 }
 
-function blocksToHtml(blocks: ArticleBlock[]) {
+function blocksToHtml(blocks: ArticleBlock[], title: string) {
   const inner = blocks.map((block) => {
     if (block.type === "image") {
       return `<p><img src="${block.src}" alt="${block.alt ?? ""}"></p>`;
@@ -259,7 +259,7 @@ function blocksToHtml(blocks: ArticleBlock[]) {
     return "";
   }).join("");
 
-  return `<article>${inner}</article>`;
+  return `<article><h1>${title}</h1>${inner}</article>`;
 }
 
 function imageFilename(src: string): string {
@@ -355,7 +355,8 @@ app.post("/api/send", async (req, res) => {
             });
         }
 
-        const html = blocksToHtml(finalContent);
+        const html = blocksToHtml(finalContent, title);
+        console.log(html);
 
         const instapaperUrl =
             "https://www.instapaper.com/api/1/bookmarks/add";
