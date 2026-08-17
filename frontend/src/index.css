@@ -10,18 +10,19 @@
 
 .articleUrlTextbox {
     flex: 1;
-    border: 1px solid #000000;
+    border: none;
     border-radius: 100px;
     padding: 10px;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .mainContent {
     display: flex;
     flex-direction: row;
-    padding-bottom: 2.5rem;
-    border-top: 1px solid #ccc;
-    margin-top: 2.5rem;
-    padding-top: 2.5rem;
+    padding-bottom: 4rem;
+    padding-top: 1rem;
+    gap: 1rem;
+    align-items: flex-start;
 }
 
 .footer {
@@ -29,19 +30,12 @@
     position: fixed;
     bottom: 1rem;
     right: 1rem;
-    gap: 10px
-}
-
-.includeHeader {
-    height: 2.5rem;
-    width: 15rem;
-    cursor: pointer;
-    background-color: rgb(52, 120, 246);
-    color: white;
-    box-shadow: none;
-    border: none;
-    border-radius: 100px;
-    justify-self: center;
+    gap: 10px;
+    background-color: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0px 0px 10px #aaa;
+    flex-wrap: wrap;
 }
 
 
@@ -56,8 +50,17 @@
     cursor: pointer;
 }
 
-.includeHeaderCheckbox {
+.includeHeaderButton {
+    height: 2.5rem;
+    width: 12rem;
     cursor: pointer;
+    background-color: white;
+    color: black;
+    box-shadow: none;
+    border: none;
+    border-radius: 100px;
+    justify-self: center;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .sendToInstapaperButton {
@@ -69,26 +72,32 @@
     box-shadow: none;
     border: none;
     border-radius: 100px;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .articleUrlSubmitButton {
     cursor: pointer;
     background-color: rgb(52, 120, 246);
     color: white;
-    box-shadow: none;
+    box-shadow: 0px 0px 5px #aaa;
     border: none;
     border-radius: 100px;
 }
 
 .displayedBlocks {
-    flex: 0.75;
+    flex: 3;
     padding-right: 20px;
+    padding-left: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .missingBlocks {
-    flex: 0.25;
-    border-left: 1px solid #ccc;
-    padding-left: 10px;
+    flex: 1;
+    padding-right: 20px;
+    padding-left: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .loadingOverlay {
@@ -132,6 +141,7 @@
     align-items: center;
     gap: 1rem;
     margin-bottom: 1rem;
+    margin-top: 1rem;
 }
 
 .thumbnailPreview {
@@ -140,8 +150,39 @@
     object-fit: cover;
     border-radius: 12px;
     flex-shrink: 0;
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .articlePreviewHeader h1 {
     margin: 0;
+}
+
+.selectTitleSource {
+    position: relative;
+    display: flex;
+}
+
+.selectTitleSourceDropdown {
+    appearance: none;
+    padding-right: 2rem;
+    padding-left: 1rem;
+    box-shadow: 0px 0px 5px #aaa;
+    border: none;
+}
+
+.selectTitleSourceIcon {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+
+    pointer-events: none;
+}
+
+.junkDropdown {
+    margin: 10px;
+    padding: 1rem;
+    box-shadow: 0px 0px 5px #aaa;
+    border-radius: 10px;
+    cursor: pointer;
 }

@@ -4,6 +4,7 @@ import type { ArticleBlock } from "../../shared/types";
 import { processArticle, sendArticleToInstapaper } from './utils/urlUtils';
 import ArticleBlockView from './components/ArticleBlock';
 import MissingBlockView from './components/MissingBlock';
+import { RiExpandUpDownFill } from "react-icons/ri";
 
 function App() {
     const [url, setUrl] = useState("");
@@ -225,7 +226,7 @@ function App() {
                         ))}
                         {likelyJunk.length > 0 && (
                             <details>
-                                <summary>
+                                <summary className="junkDropdown">
                                     {likelyJunk.length} likely page-layout blocks hidden
                                 </summary>
 
@@ -253,34 +254,34 @@ function App() {
             </div>
             {displayedBlocks.length > 0 && (
                 <div className="footer">
-                    <select
-                        value={selectedTitleSource}
-                        onChange={(e) =>
-                            setSelectedTitleSource(
-                                e.target.value as "readability" | "metadata"
-                            )
-                        }
-                    >
-                        <option value="readability">
-                            {readabilityTitle}
-                        </option>
+                    <div className="selectTitleSource">
+                        <select
+                            value={selectedTitleSource}
+                            className="selectTitleSourceDropdown"
+                            onChange={(e) =>
+                                setSelectedTitleSource(
+                                    e.target.value as "readability" | "metadata"
+                                )
+                            }
+                        >
+                            <option value="readability">
+                                {readabilityTitle}
+                            </option>
 
-                        <option value="metadata">
-                            {metadataTitle}
-                        </option>
-                    </select>
+                            <option value="metadata">
+                                {metadataTitle}
+                            </option>
+                        </select>
+                        <RiExpandUpDownFill className="selectTitleSourceIcon"/>
+                    </div>
                     <div className="includeHeader">
-                        <label htmlFor="includeHeader" className="includeHeaderLabel">
-                            <input
-                                className="includeHeaderCheckbox"
-                                type="checkbox"
-                                checked={includeHeader}
-                                id="includeHeader"
-                                onChange={() => {
-                                    setIncludeHeader(!includeHeader);
-                                }} />
-                            Include header in HTML
-                        </label>
+                        <button
+                        className="includeHeaderButton"
+                        onClick={() =>
+                            setIncludeHeader(!includeHeader)
+                        }>
+                            {includeHeader ? "Remove header from HTML" : "Include header from HTML"}
+                        </button>
                     </div>
                     <button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton} className="sendToInstapaperButton">
                         Send to Instapaper
