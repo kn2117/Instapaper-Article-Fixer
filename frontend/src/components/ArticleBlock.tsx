@@ -17,32 +17,37 @@ function ArticleBlockView({ block }: Props) {
       );
 
     case "heading": {
-        const Tag = `h${block.level}` as
-                | "h1"
-                | "h2"
-                | "h3"
-                | "h4"
-                | "h5"
-                | "h6";
+      const Tag = `h${block.level}` as
+        | "h1"
+        | "h2"
+        | "h3"
+        | "h4"
+        | "h5"
+        | "h6";
 
-        return (
-            <Tag className="headerBlock"
-            dangerouslySetInnerHTML={{
-                __html: block.html!,
-            }}
-            />
-        );
+      return (
+        <Tag className="headerBlock"
+          dangerouslySetInnerHTML={{
+            __html: block.html!,
+          }}
+        />
+      );
     }
 
-    case "image":
+    case "image": {
+      const previewSrc =
+        `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
+        encodeURIComponent(block.src!);
+
       return (
         <p className="imageBlock">
-            <img
-              src={block.src}
-              alt={block.alt}
-            />
+          <img
+            src={previewSrc}
+            alt={block.alt}
+          />
         </p>
       );
+    }
 
     case "ul":
       return (

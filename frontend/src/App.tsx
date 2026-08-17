@@ -7,7 +7,7 @@ import MissingBlockView from './components/MissingBlock';
 
 function App() {
     const [url, setUrl] = useState("");
-    const [title, setTitle] = useState("");
+    //const [title, setTitle] = useState("");
     const [articleBlocks, setArticleBlocks] = useState<ArticleBlock[]>([]);
     const [missingBlocks, setMissingBlocks] = useState<ArticleBlock[]>([]);
     const likelyMissing = missingBlocks.filter(
@@ -42,6 +42,29 @@ function App() {
     });
     const [disableSubmitButton, setDisableSubmitButton] = useState<boolean>(false);
     const [disableSendToInstapaperButton, setDisableSendToInstapaperButton] = useState<boolean>(false);
+    const [includeHeader, setIncludeHeader] = useState<boolean>(true);
+    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+    const [readabilityTitle, setReadabilityTitle] = useState("");
+    const [metadataTitle, setMetadataTitle] = useState("");
+    const [selectedTitleSource, setSelectedTitleSource] = useState<"readability" | "metadata">("readability");
+    const title =
+        selectedTitleSource === "readability"
+            ? readabilityTitle
+            : metadataTitle;
+    const previewBlocks: ArticleBlock[] = includeHeader
+        ? [
+            {
+                type: "heading",
+                level: 1,
+                html: title,
+                text: title,
+            },
+            ...displayedBlocks,
+        ]
+        : displayedBlocks;
+    const firstHeadingIndex = previewBlocks.findIndex(
+        block => block.type === "heading"
+    );
 
     async function handleProcessWebpageSubmit(e: React.SubmitEvent<HTMLFormElement>) {
         setDisableSubmitButton(true);
@@ -64,13 +87,16 @@ function App() {
             return;
         }
 
-        setTitle("");
+        setReadabilityTitle("");
+        setMetadataTitle("");
+        setSelectedTitleSource("readability");
         setArticleBlocks([]);
         setMissingBlocks([]);
         setSelectedBlocks([]);
         setUrl("");
+        setIncludeHeader(true);
 
-        await processArticle(submittedUrl, setTitle, setArticleBlocks, setMissingBlocks);
+        await processArticle(submittedUrl, setReadabilityTitle, setMetadataTitle, setArticleBlocks, setMissingBlocks, setThumbnailUrl);
         setUrl(submittedUrl);
         setDisableSubmitButton(false);
     }
@@ -79,7 +105,7 @@ function App() {
         setDisableSendToInstapaperButton(true);
         e.preventDefault();
 
-        await sendArticleToInstapaper(url, title, displayedBlocks);
+        await sendArticleToInstapaper(url, title, displayedBlocks, includeHeader, thumbnailUrl);
         setDisableSendToInstapaperButton(false);
     }
 
@@ -147,14 +173,33 @@ function App() {
             <div className="mainContent">
                 {displayedBlocks.length > 0 && (
                     <div className="displayedBlocks">
-                        <h1>{title}</h1>
+                        <div className="articlePreviewHeader">
+                            {thumbnailUrl && (
+                                <img
+                                    className="thumbnailPreview"
+                                    src={
+                                        `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
+                                        encodeURIComponent(thumbnailUrl)
+                                    }
+                                    alt=""
+                                />
+                            )}
 
-                        {displayedBlocks.map((block, index) => (
-                            <ArticleBlockView
-                                key={`${block.sourceIndex ?? "unmatched"}-${index}`}
-                                block={block}
-                            />
-                        ))}
+                            <h1>{title}</h1>
+                        </div>
+
+                        {previewBlocks.map((block, index) => {
+                            if (index === firstHeadingIndex) {
+                                return null;
+                            }
+
+                            return (
+                                <ArticleBlockView
+                                    key={`${block.sourceIndex ?? "unmatched"}-${index}`}
+                                    block={block}
+                                />
+                            );
+                        })}
                     </div>
                 )}
                 {missingBlocks.length > 0 && (
@@ -207,9 +252,56 @@ function App() {
                 )}
             </div>
             {displayedBlocks.length > 0 && (
-                <button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton} className="sendToInstapaperButton">
-                    Send to Instapaper
-                </button>
+                <div className="footer">
+                    <select
+                        value={selectedTitleSource}
+                        onChange={(e) =>
+                            setSelectedTitleSource(
+                                e.target.value as "readability" | "metadata"
+                            )
+                        }
+                    >
+                        <option value="readability">
+                            {readabilityTitle}
+                        </option>
+
+                        <option value="metadata">
+                            {metadataTitle}
+                        </option>
+                    </select>
+                    <div className="includeHeader">
+                        <label htmlFor="includeHeader" className="includeHeaderLabel">
+                            <input
+                                className="includeHeaderCheckbox"
+                                type="checkbox"
+                                checked={includeHeader}
+                                id="includeHeader"
+                                onChange={() => {
+                                    setIncludeHeader(!includeHeader);
+                                }} />
+                            Include header in HTML
+                        </label>
+                    </div>
+                    <button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton} className="sendToInstapaperButton">
+                        Send to Instapaper
+                    </button>
+                </div>
+            )}
+            {disableSubmitButton && (
+                <div className="loadingOverlay">
+                    <div className="loadingBox">
+                        <div className="spinner" />
+                        <p>Processing article...</p>
+                    </div>
+                </div>
+            )}
+            {disableSendToInstapaperButton && (
+                <div className="loadingOverlay">
+                    <div className="loadingBox">
+                        <div className="spinner" />
+                        <p>Sending to Instapaper...</p>
+                    </div>
+                </div>
             )}
         </>
     )

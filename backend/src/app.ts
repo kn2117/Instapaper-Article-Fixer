@@ -6,6 +6,10 @@ import cors from "cors";
 import OAuth from "oauth-1.0a";
 import crypto from "crypto";
 import "dotenv/config";
+import {
+    fetchArticleHtml,
+    getCachedImage,
+} from "./urlUtils.js";
 
 const oauth = new OAuth({
     consumer: {
@@ -50,6 +54,17 @@ function blockKey(block: ArticleBlock): string {
     return `${block.type}:${block.text ?? ""}`;
 }
 
+function isLikelyTrackingImage(rawUrl: string): boolean {
+    const lower = rawUrl.toLowerCase();
+
+    return (
+        lower.includes("facebook.com/tr") ||
+        lower.includes("doubleclick.net") ||
+        lower.includes("google-analytics.com") ||
+        lower.includes("googletagmanager.com")
+    );
+}
+
 function getImageCandidates(element: Element, pageUrl: string): ImageCandidate[] {
     const candidates: ImageCandidate[] = [];
 
@@ -57,13 +72,13 @@ function getImageCandidates(element: Element, pageUrl: string): ImageCandidate[]
         rawUrl: string | null | undefined,
         width?: number
     ) => {
-        if (!rawUrl || rawUrl.startsWith("data:")) {
+        if (!rawUrl || rawUrl.startsWith("data:") || isLikelyTrackingImage(rawUrl)) {
             return;
         }
 
         try {
             const url = new URL(rawUrl, pageUrl);
-            url.search = "";
+            //url.search = "";
 
             candidates.push({
                 url: url.href,
@@ -236,6 +251,17 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
             });
             return;
         }
+        if (element.matches("figcaption, .figure-caption, .figure-credit")) {
+            if (isEmptyBlock(element)) {
+                return;
+            }
+
+            pushBlock({
+                type: "paragraph",
+                html: element.innerHTML,
+                text: normalizedText(element),
+            });
+        }
         for (const child of Array.from(element.children)) {
             walkHtml(child);
         }
@@ -245,7 +271,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
     return blocks;
 }
 
-function blocksToHtml(blocks: ArticleBlock[], title: string) {
+function blocksToHtml(blocks: ArticleBlock[], title: string, includeHeader: boolean, thumbnailUrl: string | null) {
     const inner = blocks.map((block) => {
         if (block.type === "image") {
             return `<p><img src="${block.src}" alt="${block.alt ?? ""}"></p>`;
@@ -270,7 +296,29 @@ function blocksToHtml(blocks: ArticleBlock[], title: string) {
         return "";
     }).join("");
 
-    return `<article><h1>${title}</h1>${inner}</article>`;
+    const head = thumbnailUrl
+        ? `
+            <head>
+                <meta property="og:image" content="${thumbnailUrl}">
+            </head>
+        `
+        : "<head></head>";
+    const header = includeHeader
+        ? `<h1>${title}</h1>`
+        : "";
+
+    return `
+        <!doctype html>
+        <html>
+            ${head}
+            <body>
+                <article>
+                    ${header}
+                    ${inner}
+                </article>
+            </body>
+        </html>
+    `;
 }
 
 function imageFilename(src: string): string {
@@ -358,12 +406,157 @@ function isOriginalBlockCovered(
     return combinedText === originalText;
 }
 
+function normalizedImageFilename(src: string, pageUrl?: string): string {
+    const url = pageUrl
+        ? new URL(src, pageUrl)
+        : new URL(src);
+
+    return decodeURIComponent(
+        url.pathname.split("/").pop() ?? ""
+    )
+        .trim()
+        .toLowerCase();
+}
+
+function resolveImageSrc(
+    document: Document,
+    imageSrc: string,
+    pageUrl: string
+): string | null {
+    const targetFilename =
+        normalizedImageFilename(imageSrc, pageUrl);
+
+    const elements =
+        document.querySelectorAll("[data-b-bg]");
+
+    for (const element of elements) {
+        const dataBg =
+            element.getAttribute("data-b-bg");
+
+        if (!dataBg) {
+            continue;
+        }
+
+        try {
+            const parsed = JSON.parse(dataBg);
+
+            for (const value of Object.values(parsed)) {
+                if (
+                    typeof value !== "object" ||
+                    value === null ||
+                    !("src" in value) ||
+                    typeof value.src !== "string"
+                ) {
+                    continue;
+                }
+
+                const candidateFilename =
+                    normalizedImageFilename(
+                        value.src,
+                        pageUrl
+                    );
+
+                if (
+                    candidateFilename === targetFilename
+                ) {
+                    return new URL(
+                        value.src,
+                        pageUrl
+                    ).href;
+                }
+            }
+        } catch {
+            // ignore malformed data-b-bg
+        }
+    }
+
+    return null;
+}
+
+function getThumbnailUrl(
+    document: Document,
+    pageUrl: string,
+    originalContent: ArticleBlock[],
+    articleContent: ArticleBlock[]
+): string | null {
+    const ogImage = document
+        .querySelector('meta[property="og:image"]')
+        ?.getAttribute("content");
+    //console.log(`OGImage: ${ogImage}`);
+    if (ogImage) {
+        return new URL(ogImage, pageUrl).href;
+    }
+
+    const imageSrc = document
+        .querySelector('link[rel="image_src"]')
+        ?.getAttribute("href");
+    //console.log(`imageSrc: ${imageSrc}`);
+    if (imageSrc) {
+        const imageSrc = document
+            .querySelector('link[rel="image_src"]')
+            ?.getAttribute("href");
+
+        if (imageSrc) {
+            const resolved = resolveImageSrc(
+                document,
+                imageSrc,
+                pageUrl
+            );
+
+            if (resolved) {
+                return resolved;
+            }
+        }
+        const targetFilename = normalizedImageFilename(
+            imageSrc!,
+            pageUrl
+        );
+
+        console.log("image_src filename:", targetFilename);
+
+        console.log(
+            "original image filenames:",
+            originalContent
+                .filter(block => block.type === "image" && block.src)
+                .map(block =>
+                    normalizedImageFilename(block.src!)
+                )
+        );
+
+        const match = originalContent.find(block => {
+            if (block.type !== "image" || !block.src) {
+                return false;
+            }
+
+            return (
+                normalizedImageFilename(block.src) ===
+                targetFilename
+            );
+        });
+
+        if (match?.src) {
+            return match.src;
+        }
+    }
+
+    const twitterImage = document
+        .querySelector('meta[name="twitter:image"]')
+        ?.getAttribute("content");
+
+    if (twitterImage) {
+        return new URL(twitterImage, pageUrl).href;
+    }
+
+    return articleContent.find(
+        block => block.type === "image" && block.src
+    )?.src ?? null;
+}
+
 app.post("/api/extract", async (req, res) => {
     try {
         const url = req.body.url;
 
-        const response = await fetch(url);
-        const html = await response.text();
+        const html = await fetchArticleHtml(url);
 
         const originalDom = new JSDOM(html, { url });
         const dom = new JSDOM(html, { url });
@@ -382,14 +575,24 @@ app.post("/api/extract", async (req, res) => {
         articleContent.forEach((block, index) => {
             block.readIndex = index;
         });
+        const usedExactMatches = new Set<number>();
+
         for (const articleBlock of articleContent) {
-            let match = originalContent.find(
-                originalBlock =>
-                    blockKey(originalBlock) === blockKey(articleBlock)
+            let exactMatch = originalContent.find(originalBlock =>
+                blockKey(originalBlock) === blockKey(articleBlock) &&
+                originalBlock.sourceIndex !== undefined &&
+                !usedExactMatches.has(originalBlock.sourceIndex)
             );
 
-            if (!match && articleBlock.text) {
-                match = originalContent.find(originalBlock => {
+            if (exactMatch?.sourceIndex !== undefined) {
+                articleBlock.sourceIndex = exactMatch.sourceIndex;
+                usedExactMatches.add(exactMatch.sourceIndex);
+                continue;
+            }
+
+            // Your fallback for split blocks
+            if (articleBlock.text) {
+                const fallbackMatch = originalContent.find(originalBlock => {
                     if (
                         originalBlock.type !== articleBlock.type ||
                         !originalBlock.text
@@ -399,15 +602,41 @@ app.post("/api/extract", async (req, res) => {
 
                     return originalBlock.text.includes(articleBlock.text!);
                 });
-            }
 
-            if (match?.sourceIndex !== undefined) {
-                articleBlock.sourceIndex = match.sourceIndex;
+                if (fallbackMatch?.sourceIndex !== undefined) {
+                    articleBlock.sourceIndex = fallbackMatch.sourceIndex;
+                }
             }
         }
-        const readabilityKeys = new Set(
-            articleContent.map(blockKey)
-        );
+
+        for (const articleBlock of articleContent) {
+            if (
+                articleBlock.type !== "image" ||
+                !articleBlock.src
+            ) {
+                continue;
+            }
+
+            const match = originalContent.find(
+                originalBlock =>
+                    originalBlock.type === "image" &&
+                    originalBlock.src &&
+                    sameUnderlyingImage(
+                        articleBlock.src!,
+                        originalBlock.src
+                    )
+            );
+
+            if (match?.src) {
+                // Replace Readability thumbnail with the
+                // better image from the original page
+                articleBlock.src = match.src;
+
+                if (match.sourceIndex !== undefined) {
+                    articleBlock.sourceIndex = match.sourceIndex;
+                }
+            }
+        }
 
         const missingContent = originalContent
             .filter(
@@ -425,11 +654,30 @@ app.post("/api/extract", async (req, res) => {
                 ),
             }));
 
+        const thumbnailUrl = getThumbnailUrl(
+            originalDom.window.document,
+            url,
+            originalContent,
+            articleContent
+        );
+
+        const readabilityTitle = article.title ?? "";
+
+        const metadataTitle =
+            originalDom.window.document
+                .querySelector('meta[property="og:title"]')
+                ?.getAttribute("content")
+                ?.trim()
+            ??
+            originalDom.window.document.title.trim();
+
         res.json({
             url,
-            title: article.title,
+            readabilityTitle,
+            metadataTitle,
             articleContent,
             missingContent,
+            thumbnailUrl,
         });
     } catch (error) {
         console.error(error);
@@ -445,6 +693,8 @@ app.post("/api/send", async (req, res) => {
         const url = req.body.url as string;
         const title = req.body.title as string;
         const finalContent = req.body.finalContent as ArticleBlock[];
+        const includeHeader = req.body.includeHeader as boolean;
+        const thumbnailurl = req.body.thumbnailUrl as string | null;
 
         if (!url || !title || !Array.isArray(finalContent)) {
             return res.status(400).json({
@@ -452,7 +702,7 @@ app.post("/api/send", async (req, res) => {
             });
         }
 
-        const html = blocksToHtml(finalContent, title);
+        const html = blocksToHtml(finalContent, title, includeHeader, thumbnailurl);
 
         const instapaperUrl =
             "https://www.instapaper.com/api/1/bookmarks/add";
@@ -513,6 +763,83 @@ app.post("/api/send", async (req, res) => {
         res.status(500).json({
             error: "Failed to send article to Instapaper",
         });
+    }
+});
+
+app.get("/api/image", async (req, res) => {
+    const imageUrl = req.query.url;
+
+    if (typeof imageUrl !== "string") {
+        return res.status(400).send("Missing image URL");
+    }
+
+    const cached = getCachedImage(imageUrl);
+
+    if (cached) {
+        // console.log(
+        //     "Serving cached browser image:",
+        //     imageUrl
+        // );
+
+        res.setHeader(
+            "Content-Type",
+            cached.contentType
+        );
+
+        return res.send(cached.data);
+    }
+
+    try {
+        const parsedUrl = new URL(imageUrl);
+
+        const response = await fetch(imageUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/140.0.0.0 Safari/537.36",
+
+                "Referer": `${parsedUrl.origin}/`,
+            },
+        });
+
+        if (!response.ok) {
+            console.error(
+                "Image fetch failed:",
+                response.status,
+                imageUrl
+            );
+
+            return res
+                .status(response.status)
+                .send("Image fetch failed");
+        }
+
+        const contentType =
+            response.headers.get("content-type");
+
+        // console.log(
+        //     "IMAGE PROXY:",
+        //     response.status,
+        //     contentType,
+        //     imageUrl
+        // );
+
+        if (contentType) {
+            res.setHeader(
+                "Content-Type",
+                contentType
+            );
+        }
+
+        const buffer = Buffer.from(
+            await response.arrayBuffer()
+        );
+
+        res.send(buffer);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Image proxy failed");
     }
 });
 
