@@ -418,6 +418,47 @@ function normalizedImageFilename(src: string, pageUrl?: string): string {
         .toLowerCase();
 }
 
+function getDataBgFallback(
+    document: Document,
+    pageUrl: string
+): string | null {
+    const elements =
+        document.querySelectorAll("[data-b-bg]");
+
+    for (const element of elements) {
+        const dataBg =
+            element.getAttribute("data-b-bg");
+
+        if (!dataBg) {
+            continue;
+        }
+
+        try {
+            const parsed = JSON.parse(dataBg);
+
+            for (const value of Object.values(parsed)) {
+                if (
+                    typeof value !== "object" ||
+                    value === null ||
+                    !("src" in value) ||
+                    typeof value.src !== "string"
+                ) {
+                    continue;
+                }
+
+                return new URL(
+                    value.src,
+                    pageUrl
+                ).href;
+            }
+        } catch {
+            // ignore malformed data-b-bg
+        }
+    }
+
+    return null;
+}
+
 function resolveImageSrc(
     document: Document,
     imageSrc: string,
@@ -479,6 +520,8 @@ function getThumbnailUrl(
     originalContent: ArticleBlock[],
     articleContent: ArticleBlock[]
 ): string | null {
+    console.log("URL:", pageUrl);
+
     const ogImage = document
         .querySelector('meta[property="og:image"]')
         ?.getAttribute("content");
@@ -490,37 +533,23 @@ function getThumbnailUrl(
     const imageSrc = document
         .querySelector('link[rel="image_src"]')
         ?.getAttribute("href");
-    //console.log(`imageSrc: ${imageSrc}`);
+
     if (imageSrc) {
-        const imageSrc = document
-            .querySelector('link[rel="image_src"]')
-            ?.getAttribute("href");
-
-        if (imageSrc) {
-            const resolved = resolveImageSrc(
-                document,
-                imageSrc,
-                pageUrl
-            );
-
-            if (resolved) {
-                return resolved;
-            }
-        }
-        const targetFilename = normalizedImageFilename(
-            imageSrc!,
+        // 1. Prefer exact matching data-b-bg image.
+        const resolved = resolveImageSrc(
+            document,
+            imageSrc,
             pageUrl
         );
 
-        console.log("image_src filename:", targetFilename);
+        if (resolved) {
+            return resolved;
+        }
 
-        console.log(
-            "original image filenames:",
-            originalContent
-                .filter(block => block.type === "image" && block.src)
-                .map(block =>
-                    normalizedImageFilename(block.src!)
-                )
+        // 2. Look for an exact matching normal <img>.
+        const targetFilename = normalizedImageFilename(
+            imageSrc,
+            pageUrl
         );
 
         const match = originalContent.find(block => {
@@ -536,6 +565,16 @@ function getThumbnailUrl(
 
         if (match?.src) {
             return match.src;
+        }
+
+        // 3. Only now use a different data-b-bg image.
+        const dataBgFallback = getDataBgFallback(
+            document,
+            pageUrl
+        );
+
+        if (dataBgFallback) {
+            return dataBgFallback;
         }
     }
 

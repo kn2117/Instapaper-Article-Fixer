@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './index.css'
 import type { ArticleBlock } from "../../shared/types";
 import { processArticle, sendArticleToInstapaper } from './utils/urlUtils';
@@ -66,6 +66,15 @@ function App() {
     const firstHeadingIndex = previewBlocks.findIndex(
         block => block.type === "heading"
     );
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const incomingUrl = params.get("url");
+
+        if (incomingUrl) {
+            setUrl(incomingUrl);
+        }
+    }, []);
 
     async function handleProcessWebpageSubmit(e: React.SubmitEvent<HTMLFormElement>) {
         setDisableSubmitButton(true);
@@ -160,10 +169,13 @@ function App() {
         <>
             <h1>Alternative Article Extractor</h1>
             <form onSubmit={handleProcessWebpageSubmit} className="articleUrlSubmission">
-                <input className="articleUrlTextbox"
+                <input
+                    className="articleUrlTextbox"
                     type="url"
                     name="url"
                     placeholder="Article URL"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
                     onClick={(e) => e.currentTarget.select()}
                 />
 
@@ -272,14 +284,14 @@ function App() {
                                 {metadataTitle}
                             </option>
                         </select>
-                        <RiExpandUpDownFill className="selectTitleSourceIcon"/>
+                        <RiExpandUpDownFill className="selectTitleSourceIcon" />
                     </div>
                     <div className="includeHeader">
                         <button
-                        className="includeHeaderButton"
-                        onClick={() =>
-                            setIncludeHeader(!includeHeader)
-                        }>
+                            className="includeHeaderButton"
+                            onClick={() =>
+                                setIncludeHeader(!includeHeader)
+                            }>
                             {includeHeader ? "Remove header from HTML" : "Include header from HTML"}
                         </button>
                     </div>
