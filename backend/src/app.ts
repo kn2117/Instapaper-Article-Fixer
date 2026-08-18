@@ -514,13 +514,35 @@ function resolveImageSrc(
     return null;
 }
 
+function getFirstContentImage(
+    document: Document,
+    pageUrl: string
+): string | null {
+    const images = Array.from(
+        document.querySelectorAll("img")
+    );
+
+    for (const img of images) {
+        if (img.closest("header, footer")) {
+            continue;
+        }
+
+        const src = getImageSrc(img, pageUrl);
+
+        if (src) {
+            return src;
+        }
+    }
+
+    return null;
+}
+
 function getThumbnailUrl(
     document: Document,
     pageUrl: string,
     originalContent: ArticleBlock[],
     articleContent: ArticleBlock[]
 ): string | null {
-    console.log("URL:", pageUrl);
 
     const ogImage = document
         .querySelector('meta[property="og:image"]')
@@ -585,10 +607,16 @@ function getThumbnailUrl(
     if (twitterImage) {
         return new URL(twitterImage, pageUrl).href;
     }
+    const firstContentImage = getFirstContentImage(
+        document,
+        pageUrl
+    );
 
-    return articleContent.find(
-        block => block.type === "image" && block.src
-    )?.src ?? null;
+    if (firstContentImage) {
+        return firstContentImage;
+    }
+
+    return null;
 }
 
 app.post("/api/extract", async (req, res) => {
@@ -631,19 +659,24 @@ app.post("/api/extract", async (req, res) => {
 
             // Your fallback for split blocks
             if (articleBlock.text) {
-                const fallbackMatch = originalContent.find(originalBlock => {
-                    if (
-                        originalBlock.type !== articleBlock.type ||
-                        !originalBlock.text
-                    ) {
-                        return false;
+                const articleText = articleBlock.text.trim();
+
+                // Only use substring matching for substantial text.
+                if (articleText.length >= 40) {
+                    const fallbackMatch = originalContent.find(originalBlock => {
+                        if (
+                            originalBlock.type !== articleBlock.type ||
+                            !originalBlock.text
+                        ) {
+                            return false;
+                        }
+
+                        return originalBlock.text.includes(articleText);
+                    });
+
+                    if (fallbackMatch?.sourceIndex !== undefined) {
+                        articleBlock.sourceIndex = fallbackMatch.sourceIndex;
                     }
-
-                    return originalBlock.text.includes(articleBlock.text!);
-                });
-
-                if (fallbackMatch?.sourceIndex !== undefined) {
-                    articleBlock.sourceIndex = fallbackMatch.sourceIndex;
                 }
             }
         }
@@ -674,6 +707,30 @@ app.post("/api/extract", async (req, res) => {
                 if (match.sourceIndex !== undefined) {
                     articleBlock.sourceIndex = match.sourceIndex;
                 }
+            }
+        }
+
+        for (let i = 0; i < articleContent.length; i++) {
+            const block = articleContent[i];
+
+            if (block!.sourceIndex !== undefined) {
+                continue;
+            }
+
+            const previous = articleContent
+                .slice(0, i)
+                .reverse()
+                .find(block => block.sourceIndex !== undefined);
+
+            const next = articleContent
+                .slice(i + 1)
+                .find(block => block.sourceIndex !== undefined);
+
+            if (
+                previous?.sourceIndex !== undefined &&
+                next?.sourceIndex !== undefined
+            ) {
+                block!.sourceIndex = previous.sourceIndex;
             }
         }
 
@@ -749,7 +806,7 @@ app.post("/api/send", async (req, res) => {
         const body = {
             url,
             title,
-            resolve_final_url: "0",
+            //resolve_final_url: "0",
             content: html,
         };
 

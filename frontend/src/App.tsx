@@ -201,64 +201,70 @@ function App() {
                             <h1>{title}</h1>
                         </div>
 
-                        {previewBlocks.map((block, index) => {
-                            if (index === firstHeadingIndex) {
-                                return null;
-                            }
+                        <div className="articleBlocksList">
+                            {previewBlocks.map((block, index) => {
+                                if (index === firstHeadingIndex) {
+                                    return null;
+                                }
 
-                            return (
-                                <ArticleBlockView
-                                    key={`${block.sourceIndex ?? "unmatched"}-${index}`}
-                                    block={block}
-                                />
-                            );
-                        })}
+                                return (
+                                    <ArticleBlockView
+                                        key={`${block.sourceIndex ?? "unmatched"}-${index}`}
+                                        block={block}
+                                    />
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
                 {missingBlocks.length > 0 && (
                     <div className="missingBlocks">
                         <h1>Potential missing blocks</h1>
 
-                        {likelyMissing.map((block, index) => (
-                            <MissingBlockView
-                                key={`${block.sourceIndex}-${index}`}
-                                block={block}
-                                selected={selectedBlocks.some(
-                                    selected =>
-                                        selected.sourceIndex === block.sourceIndex
-                                )}
-                                onToggle={(block, shiftKey) =>
-                                    toggleMissingBlock(
-                                        block,
-                                        index,
-                                        shiftKey
-                                    )
-                                }
-                            />
-                        ))}
+                        <div className="missingBlocksList">
+                            {likelyMissing.map((block, index) => (
+                                <MissingBlockView
+                                    key={`${block.sourceIndex}-${index}`}
+                                    block={block}
+                                    selected={selectedBlocks.some(
+                                        selected =>
+                                            selected.sourceIndex === block.sourceIndex
+                                    )}
+                                    onToggle={(block, shiftKey) =>
+                                        toggleMissingBlock(
+                                            block,
+                                            index,
+                                            shiftKey
+                                        )
+                                    }
+                                />
+                            ))}
+                        </div>
                         {likelyJunk.length > 0 && (
-                            <details>
+                            <details className="junkContainer">
                                 <summary className="junkDropdown">
                                     {likelyJunk.length} likely page-layout blocks hidden
                                 </summary>
 
-                                {likelyJunk.map((block, index) => (
-                                    <MissingBlockView
-                                        key={`junk-${block.sourceIndex}-${index}`}
-                                        block={block}
-                                        selected={selectedBlocks.some(
-                                            selected =>
-                                                selected.sourceIndex === block.sourceIndex
-                                        )}
-                                        onToggle={(block, shiftKey) =>
-                                            toggleMissingBlock(
-                                                block,
-                                                index,
-                                                shiftKey
-                                            )
-                                        }
-                                    />
-                                ))}
+                                <div className="missingBlocksList">
+                                    {likelyJunk.map((block, index) => (
+                                        <MissingBlockView
+                                            key={`junk-${block.sourceIndex}-${index}`}
+                                            block={block}
+                                            selected={selectedBlocks.some(
+                                                selected =>
+                                                    selected.sourceIndex === block.sourceIndex
+                                            )}
+                                            onToggle={(block, shiftKey) =>
+                                                toggleMissingBlock(
+                                                    block,
+                                                    index,
+                                                    shiftKey
+                                                )
+                                            }
+                                        />
+                                    ))}
+                                </div>
                             </details>
                         )}
                     </div>

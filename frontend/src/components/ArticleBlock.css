@@ -1,38 +1,63 @@
-.missingBlock, .paragraphBlock, .headerBlock, .imageBlock, .unorderedListBlock, .orderedListBlock, .blockquoteBlock {
-    /* border: 1px solid #000000; */
+.paragraphBlock,
+.headerBlock,
+.imageBlock,
+.unorderedListBlock,
+.orderedListBlock,
+.blockquoteBlock {
     border-radius: 20px;
     padding: 10px;
-    box-shadow: 0px 0px 5px #aaa;
+    box-shadow: 0 0 5px #aaa;
+
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+
+    /* Do not use margins for block spacing */
+    margin: 0;
+}
+
+
+.imageBlock {
     width: fit-content;
     max-width: 100%;
 }
 
-.missingBlock .paragraphBlock,
-.missingBlock .headerBlock,
-.missingBlock .imageBlock,
-.missingBlock .unorderedListBlock,
-.missingBlock .orderedListBlock,
-.missingBlock .blockquoteBlock {
-    box-shadow: none;
-}
-
 .imageBlock img {
+    display: block;
+    width: auto;
     max-width: 100%;
     height: auto;
 }
 
-.orderedListBlock, .unorderedListBlock {
-    margin-left: 0px;
+.missingBlock .imageBlock {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+
+.orderedListBlock,
+.unorderedListBlock {
+    margin: 0;
     padding-left: 1.75rem;
 }
+
 
 .missingBlock {
     display: flex;
     align-items: center;
     gap: 10px;
+
     cursor: pointer;
-    margin: 10px;
+
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+
+    /* No spacing here either */
+    margin: 0;
+    padding: 0;
 }
+
 
 .missingBlock .paragraphBlock,
 .missingBlock .headerBlock,
@@ -40,27 +65,23 @@
 .missingBlock .unorderedListBlock,
 .missingBlock .orderedListBlock,
 .missingBlock .blockquoteBlock {
-    border: none;
-    padding: 0;
+    margin: 0;
 }
 
-.missingBlock .orderedListBlock, .missingBlock .unorderedListBlock {
+
+.missingBlock .orderedListBlock,
+.missingBlock .unorderedListBlock {
     padding-left: 1.5rem;
 }
 
-.missingBlock > p {
-    flex: 1;
-    min-width: 0;
-}
-
-.imageBlock img {
-    display: block;
-    max-width: 100%;
-    height: auto;
-}
 
 .checkbox {
     width: 1.25rem;
     height: 1.25rem;
+    flex-shrink: 0;
 }
 
+.imageBlock img[src$=".svg"] {
+    width: 10rem;
+    height: auto;
+}
