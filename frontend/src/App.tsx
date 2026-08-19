@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import './index.css'
 import type { ArticleBlock } from "../../shared/types";
-import { processArticle, sendArticleToInstapaper } from './utils/urlUtils';
+import { processArticle, sendArticleToInstapaper, sendArticleToWallabag } from './utils/urlUtils';
 import ArticleBlockView from './components/ArticleBlock';
 import MissingBlockView from './components/MissingBlock';
 import { RiExpandUpDownFill } from "react-icons/ri";
 
 function App() {
     const [url, setUrl] = useState("");
-    //const [title, setTitle] = useState("");
+    const [processedUrl, setProcessedUrl] = useState("");
+    const [articleTitle, setArticleTitle] = useState("");
+    const [publishDate, setPublishDate] = useState("");
+    const [authors, setAuthors] = useState("");
+    const [destination, setDestination] = useState<"instapaper" | "wallabag">("wallabag");
     const [articleBlocks, setArticleBlocks] = useState<ArticleBlock[]>([]);
     const [missingBlocks, setMissingBlocks] = useState<ArticleBlock[]>([]);
     const likelyMissing = missingBlocks.filter(
@@ -43,8 +47,18 @@ function App() {
     });
     const [disableSubmitButton, setDisableSubmitButton] = useState<boolean>(false);
     const [disableSendToInstapaperButton, setDisableSendToInstapaperButton] = useState<boolean>(false);
+    const [disableSendToWallabagButton, setDisableSendToWallabagButton] = useState<boolean>(false);
     const [includeHeader, setIncludeHeader] = useState<boolean>(true);
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+    const [showThumbnailModal, setShowThumbnailModal] = useState(false);
+    const [customThumbnailUrl, setCustomThumbnailUrl] = useState("");
+    const availableImageUrls = [
+        ...new Set(
+            [...articleBlocks, ...missingBlocks]
+                .filter(block => block.type === "image" && block.src)
+                .map(block => block.src!)
+        ),
+    ];
     const [readabilityTitle, setReadabilityTitle] = useState("");
     const [metadataTitle, setMetadataTitle] = useState("");
     const [selectedTitleSource, setSelectedTitleSource] = useState<"readability" | "metadata">("readability");
@@ -106,7 +120,21 @@ function App() {
         setUrl("");
         setIncludeHeader(true);
 
-        await processArticle(submittedUrl, setReadabilityTitle, setMetadataTitle, setArticleBlocks, setMissingBlocks, setThumbnailUrl);
+        const article = await processArticle(
+            submittedUrl,
+            setReadabilityTitle,
+            setMetadataTitle,
+            setArticleBlocks,
+            setMissingBlocks,
+            setThumbnailUrl,
+            setPublishDate,
+            setAuthors,
+            setProcessedUrl
+        );
+
+        console.log(publishDate);
+
+        setArticleTitle(article.readabilityTitle ?? "");
         setUrl(submittedUrl);
         setDisableSubmitButton(false);
     }
@@ -117,6 +145,51 @@ function App() {
 
         await sendArticleToInstapaper(url, title, displayedBlocks, includeHeader, thumbnailUrl);
         setDisableSendToInstapaperButton(false);
+    }
+
+    async function handleSendToWallabagSubmit(e: React.MouseEvent<HTMLButtonElement>) {
+        setDisableSendToWallabagButton(true);
+        e.preventDefault();
+
+        await sendArticleToWallabag(url, title, displayedBlocks, includeHeader, thumbnailUrl, publishDate, authors);
+        setDisableSendToWallabagButton(false);
+    }
+
+    function moveDisplayedBlockToMissing(block: ArticleBlock) {
+        setArticleBlocks((current) =>
+            current.filter(
+                currentBlock =>
+                    currentBlock.sourceIndex !== block.sourceIndex
+            )
+        );
+
+        setSelectedBlocks((current) =>
+            current.filter(
+                currentBlock =>
+                    currentBlock.sourceIndex !== block.sourceIndex
+            )
+        );
+
+        setMissingBlocks((current) => {
+            const alreadyThere = current.some(
+                currentBlock =>
+                    currentBlock.sourceIndex === block.sourceIndex
+            );
+
+            if (alreadyThere) {
+                return current;
+            }
+
+            return [...current, block].sort((a, b) => {
+                const aIndex =
+                    a.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+
+                const bIndex =
+                    b.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+
+                return aIndex - bIndex;
+            });
+        });
     }
 
     function toggleMissingBlock(
@@ -168,6 +241,26 @@ function App() {
     return (
         <>
             <h1>Alternative Article Extractor</h1>
+            <button
+                onClick={() => {
+                    setDestination(destination === "instapaper" ? "wallabag" : "instapaper");
+                }}>
+                {destination === "instapaper" ? "Instapaper" : "Wallabag"}
+            </button>
+            <button
+                type="button"
+                className="openArticleButton"
+                onClick={() => {
+                    window.open(
+                        processedUrl,
+                        "_blank",
+                        "noopener,noreferrer"
+                    );
+                }}
+                disabled={!processedUrl}
+            >
+                Open ↗
+            </button>
             <form onSubmit={handleProcessWebpageSubmit} className="articleUrlSubmission">
                 <input
                     className="articleUrlTextbox"
@@ -195,10 +288,101 @@ function App() {
                                         encodeURIComponent(thumbnailUrl)
                                     }
                                     alt=""
+                                    onClick={() => setShowThumbnailModal(true)}
                                 />
                             )}
+                            {!thumbnailUrl && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowThumbnailModal(true)}
+                                >
+                                    Choose thumbnail
+                                </button>
+                            )}
+                            {showThumbnailModal && (
+                                <div
+                                    className="thumbnailModalOverlay"
+                                    onClick={() => setShowThumbnailModal(false)}
+                                >
+                                    <div
+                                        className="thumbnailModal"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <h2>Choose thumbnail</h2>
 
-                            <h1>{title}</h1>
+                                        <div className="customThumbnailInput">
+                                            <input
+                                                type="url"
+                                                placeholder="Image URL"
+                                                value={customThumbnailUrl}
+                                                onChange={(e) =>
+                                                    setCustomThumbnailUrl(e.target.value)
+                                                }
+                                            />
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!customThumbnailUrl.trim()) {
+                                                        return;
+                                                    }
+
+                                                    setThumbnailUrl(
+                                                        customThumbnailUrl.trim()
+                                                    );
+
+                                                    setShowThumbnailModal(false);
+                                                    setCustomThumbnailUrl("");
+                                                }}
+                                            >
+                                                Use URL
+                                            </button>
+                                        </div>
+
+                                        <div className="thumbnailChoices">
+                                            {availableImageUrls.map((src) => (
+                                                <button
+                                                    key={src}
+                                                    type="button"
+                                                    className="thumbnailChoice"
+                                                    onClick={() => {
+                                                        setThumbnailUrl(src);
+                                                        setShowThumbnailModal(false);
+                                                    }}
+                                                >
+                                                    <img
+                                                        src={
+                                                            `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
+                                                            encodeURIComponent(src)
+                                                        }
+                                                        alt=""
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setShowThumbnailModal(false)
+                                            }
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {destination === "instapaper" &&
+                                (<h1>{title}</h1>)}
+
+                            {destination === "wallabag" &&
+                                (
+                                    <div className="articleInfo">
+                                        <input className="articleTitleBox" type="text" value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} />
+                                        <input className="articlePublishDateBox" type="datetime-local" value={publishDate} onChange={(e) => setPublishDate(e.target.value)} />
+                                        <input className="articleAuthorsBox" type="text" placeholder="Authors" value={authors} onChange={(e) => setAuthors(e.target.value)} />
+                                    </div>
+                                )}
                         </div>
 
                         <div className="articleBlocksList">
@@ -207,9 +391,24 @@ function App() {
                                     return null;
                                 }
 
+                                if (destination === "wallabag" &&
+                                    block.sourceIndex !== undefined) {
+                                    return (
+                                        <div
+                                            key={block.id}
+                                            className="removableDisplayedBlock"
+                                            onClick={() =>
+                                                moveDisplayedBlockToMissing(block)
+                                            }
+                                        >
+                                            <ArticleBlockView block={block} />
+                                        </div>
+                                    );
+                                }
+
                                 return (
                                     <ArticleBlockView
-                                        key={`${block.sourceIndex ?? "unmatched"}-${index}`}
+                                        key={block.id}
                                         block={block}
                                     />
                                 );
@@ -222,9 +421,9 @@ function App() {
                         <h1>Potential missing blocks</h1>
 
                         <div className="missingBlocksList">
-                            {likelyMissing.map((block, index) => (
+                            {destination === "instapaper" && (likelyMissing.map((block, index) => (
                                 <MissingBlockView
-                                    key={`${block.sourceIndex}-${index}`}
+                                    key={block.id}
                                     block={block}
                                     selected={selectedBlocks.some(
                                         selected =>
@@ -238,7 +437,28 @@ function App() {
                                         )
                                     }
                                 />
-                            ))}
+                            )))}
+                            {destination === "wallabag" && (
+                                likelyMissing
+                                    .filter((block) => !selectedBlocks.includes(block))
+                                    .map((block, index) => (
+                                        <MissingBlockView
+                                            key={block.id}
+                                            block={block}
+                                            selected={selectedBlocks.some(
+                                                selected =>
+                                                    selected.sourceIndex === block.sourceIndex
+                                            )}
+                                            onToggle={(block, shiftKey) =>
+                                                toggleMissingBlock(
+                                                    block,
+                                                    index,
+                                                    shiftKey
+                                                )
+                                            }
+                                        />
+                                    ))
+                            )}
                         </div>
                         {likelyJunk.length > 0 && (
                             <details className="junkContainer">
@@ -249,7 +469,7 @@ function App() {
                                 <div className="missingBlocksList">
                                     {likelyJunk.map((block, index) => (
                                         <MissingBlockView
-                                            key={`junk-${block.sourceIndex}-${index}`}
+                                            key={block.id}
                                             block={block}
                                             selected={selectedBlocks.some(
                                                 selected =>
@@ -272,7 +492,7 @@ function App() {
             </div>
             {displayedBlocks.length > 0 && (
                 <div className="footer">
-                    <div className="selectTitleSource">
+                    {destination === "instapaper" && (<div className="selectTitleSource">
                         <select
                             value={selectedTitleSource}
                             className="selectTitleSourceDropdown"
@@ -291,7 +511,7 @@ function App() {
                             </option>
                         </select>
                         <RiExpandUpDownFill className="selectTitleSourceIcon" />
-                    </div>
+                    </div>)}
                     <div className="includeHeader">
                         <button
                             className="includeHeaderButton"
@@ -301,9 +521,12 @@ function App() {
                             {includeHeader ? "Remove header from HTML" : "Include header from HTML"}
                         </button>
                     </div>
-                    <button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton} className="sendToInstapaperButton">
+                    {destination === "instapaper" && (<button type="submit" onClick={handleSendToInstapaperSubmit} disabled={disableSendToInstapaperButton} className="sendToInstapaperButton">
                         Send to Instapaper
-                    </button>
+                    </button>)}
+                    {destination === "wallabag" && (<button type="submit" onClick={handleSendToWallabagSubmit} disabled={disableSendToWallabagButton} className="sendToInstapaperButton">
+                        Send to Wallabag
+                    </button>)}
                 </div>
             )}
             {disableSubmitButton && (
@@ -314,11 +537,11 @@ function App() {
                     </div>
                 </div>
             )}
-            {disableSendToInstapaperButton && (
+            {(disableSendToInstapaperButton || disableSendToWallabagButton) && (
                 <div className="loadingOverlay">
                     <div className="loadingBox">
                         <div className="spinner" />
-                        <p>Sending to Instapaper...</p>
+                        <p>Sending to {disableSendToInstapaperButton ? "Instapaper" : "Wallabag"}...</p>
                     </div>
                 </div>
             )}

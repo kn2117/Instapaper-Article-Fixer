@@ -204,3 +204,74 @@
 .junkContainer {
     margin: 10px 0 0;
 }
+
+.thumbnailPreview {
+    cursor: pointer;
+}
+
+.thumbnailModalOverlay {
+    position: fixed;
+    inset: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 2000;
+}
+
+.thumbnailModal {
+    width: min(700px, 90vw);
+    max-height: 80vh;
+    overflow-y: auto;
+
+    background: white;
+    padding: 20px;
+
+    border-radius: 16px;
+    box-shadow: 0 0 20px #777;
+}
+
+.customThumbnailInput {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.customThumbnailInput input {
+    flex: 1;
+}
+
+.thumbnailChoices {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fill, minmax(120px, 1fr));
+
+    gap: 10px;
+}
+
+.thumbnailChoice {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.thumbnailChoice img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+
+    border-radius: 10px;
+}
+
+.articleInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.articleTitleBox {
+    field-sizing: content;
+}

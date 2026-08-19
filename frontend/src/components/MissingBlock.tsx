@@ -1,6 +1,6 @@
 import type { ArticleBlock } from "../../../shared/types";
 import ArticleBlockView from "./ArticleBlock";
-import './ArticleBlock.css';
+import "./ArticleBlock.css";
 
 type MissingBlockProps = {
     block: ArticleBlock;
@@ -17,21 +17,18 @@ function MissingBlockView({
     onToggle,
 }: MissingBlockProps) {
     return (
-        <label className="missingBlock">
-            <input className="checkbox"
-                type="checkbox"
-                checked={selected}
-                onChange={(e) =>
-                    onToggle(
-                        block,
-                        (e.nativeEvent as MouseEvent).shiftKey
-                    )
-                }
-            />
-
+        <div
+            className={`missingBlock ${selected ? "selected" : ""}`}
+            onClick={(e) =>
+                onToggle(
+                    block,
+                    e.shiftKey
+                )
+            }
+        >
             <ArticleBlockView block={block} />
-        </label>
+        </div>
     );
 }
 
-export default MissingBlockView
+export default MissingBlockView;

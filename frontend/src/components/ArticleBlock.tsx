@@ -45,6 +45,18 @@ function ArticleBlockView({ block }: Props) {
             src={previewSrc}
             alt={block.alt}
           />
+
+          <button
+            className="openOriginalImage"
+            type="button"
+            title="Open original image"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(block.src!, "_blank");
+            }}
+          >
+            ↗
+          </button>
         </p>
       );
     }

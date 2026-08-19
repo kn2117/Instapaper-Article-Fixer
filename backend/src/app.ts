@@ -9,6 +9,9 @@ import "dotenv/config";
 import {
     fetchArticleHtml,
     getCachedImage,
+    harvestArticleImages,
+    prepareWallabagImages,
+    saveImageForWallabag,
 } from "./urlUtils.js";
 
 const oauth = new OAuth({
@@ -29,6 +32,42 @@ const token = {
     key: process.env.INSTAPAPER_OAUTH_TOKEN!,
     secret: process.env.INSTAPAPER_OAUTH_SECRET!,
 };
+
+let wallabagAccessToken: string | null = null;
+let wallabagRefreshToken: string | null = null;
+let wallabagTokenExpiresAt = 0;
+
+async function wallabagAuth() {
+    const baseUrl = process.env.WALLABAG_URL
+    const body = new URLSearchParams({
+        grant_type: "password",
+        client_id: process.env.WALLABAG_CLIENT_ID!,
+        client_secret: process.env.WALLABAG_CLIENT_SECRET!,
+        username: process.env.WALLABAG_USERNAME!,
+        password: process.env.WALLABAG_PASSWORD!,
+    });
+    const response = await fetch(
+        `http://192.168.0.199:8080/oauth/v2/token`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type":
+                    "application/x-www-form-urlencoded",
+            },
+            body: body.toString(),
+        }
+    );
+    if (!response.ok) {
+        throw new Error(
+            `Wallabag token request failed: ${response.status}`
+        );
+    }
+
+    const responseBody = await response.json();
+
+    wallabagAccessToken = responseBody.access_token;
+    wallabagRefreshToken = responseBody.refresh_token;
+}
 
 const app = express();
 const PORT = 3000;
@@ -183,17 +222,25 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
 
     const blocks: ArticleBlock[] = [];
     let sourceIndex = 0;
+    let readIndex = 0;
 
     function pushBlock(block: Omit<ArticleBlock, "sourceIndex">) {
         if (isOriginal) {
             blocks.push({
                 ...block,
                 sourceIndex,
+                id: `original-${sourceIndex}`
             });
 
             sourceIndex++;
         } else {
-            blocks.push(block);
+            blocks.push({
+                ...block,
+                readIndex,
+                id: `readability-${readIndex}`
+            });
+
+            readIndex++;
         }
     }
 
@@ -271,38 +318,98 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
     return blocks;
 }
 
-function blocksToHtml(blocks: ArticleBlock[], title: string, includeHeader: boolean, thumbnailUrl: string | null) {
-    const inner = blocks.map((block) => {
-        if (block.type === "image") {
-            return `<p><img src="${block.src}" alt="${block.alt ?? ""}"></p>`;
-        }
+async function blocksToHtml(
+    blocks: ArticleBlock[],
+    title: string,
+    includeHeader: boolean,
+    thumbnailUrl: string | null,
+    articleUrl: string
+) {
+    const imageUrls = blocks
+        .filter(
+            (
+                block
+            ): block is ArticleBlock & {
+                type: "image";
+                src: string;
+            } =>
+                block.type === "image" &&
+                !!block.src
+        )
+        .map(block => block.src);
 
-        if (block.type === "heading") {
-            return `<h${block.level}>${block.html ?? ""}</h${block.level}>`;
-        }
+    const uniqueImageUrls =
+        [...new Set(imageUrls)];
 
-        if (block.type === "paragraph") {
-            return `<p>${block.html ?? ""}</p>`;
-        }
+    const wallabagImages =
+        await prepareWallabagImages(
+            uniqueImageUrls,
+            articleUrl
+        );
 
-        if (block.type === "ul" || block.type === "ol") {
-            return `<${block.type}>${block.html ?? ""}</${block.type}>`;
-        }
+    const innerParts = await Promise.all(
+        blocks.map(async (block) => {
+            if (block.type === "image") {
+                if (!block.src) {
+                    return "";
+                }
 
-        if (block.type === "blockquote") {
-            return `<blockquote>${block.html ?? ""}</blockquote>`;
-        }
+                const localUrl =
+                    wallabagImages.get(
+                        block.src
+                    );
 
-        return "";
-    }).join("");
+                if (!localUrl) {
+                    return "";
+                }
+
+                return `
+                    <p>
+                        <img
+                            src="${localUrl}"
+                            alt="${block.alt ?? ""}"
+                        >
+                    </p>
+                `;
+            }
+
+            if (block.type === "heading") {
+                return `<h${block.level}>${block.html ?? ""}</h${block.level}>`;
+            }
+
+            if (block.type === "paragraph") {
+                return `<p>${block.html ?? ""}</p>`;
+            }
+
+            if (
+                block.type === "ul" ||
+                block.type === "ol"
+            ) {
+                return `<${block.type}>${block.html ?? ""}</${block.type}>`;
+            }
+
+            if (block.type === "blockquote") {
+                return `<blockquote>${block.html ?? ""}</blockquote>`;
+            }
+
+            return "";
+        })
+    );
+
+    const inner =
+        innerParts.join("");
 
     const head = thumbnailUrl
         ? `
             <head>
-                <meta property="og:image" content="${thumbnailUrl}">
+                <meta
+                    property="og:image"
+                    content="${thumbnailUrl}"
+                >
             </head>
         `
         : "<head></head>";
+
     const header = includeHeader
         ? `<h1>${title}</h1>`
         : "";
@@ -619,6 +726,148 @@ function getThumbnailUrl(
     return null;
 }
 
+function getJsonLdObjects(document: Document): any[] {
+    const objects: any[] = [];
+
+    const scripts = document.querySelectorAll(
+        'script[type="application/ld+json"]'
+    );
+
+    for (const script of scripts) {
+        const text = script.textContent?.trim();
+
+        if (!text) {
+            continue;
+        }
+
+        try {
+            const parsed = JSON.parse(text);
+
+            if (Array.isArray(parsed)) {
+                objects.push(...parsed);
+            } else if (parsed["@graph"]) {
+                objects.push(...parsed["@graph"]);
+            } else {
+                objects.push(parsed);
+            }
+        } catch {
+            // Ignore malformed JSON-LD
+        }
+    }
+
+    return objects;
+}
+
+function getJsonLdValue(
+    document: Document,
+    key: string
+): unknown {
+    const objects = getJsonLdObjects(document);
+
+    for (const obj of objects) {
+        if (
+            obj &&
+            typeof obj === "object" &&
+            key in obj
+        ) {
+            return obj[key];
+        }
+    }
+
+    return null;
+}
+
+function getPublishDate(document: Document): string | null {
+    const ogPublished = document
+        .querySelector('meta[property="article:published_time"]')
+        ?.getAttribute("content");
+
+    if (ogPublished) {
+        return ogPublished;
+    }
+
+    const metaDate = document
+        .querySelector('meta[name="date"]')
+        ?.getAttribute("content");
+
+    if (metaDate) {
+        return metaDate;
+    }
+
+    const time = document
+        .querySelector("time[datetime]")
+        ?.getAttribute("datetime");
+
+    if (time) {
+        return time;
+    }
+
+    const jsonLdDate = getJsonLdValue(
+        document,
+        "datePublished"
+    );
+
+    if (typeof jsonLdDate === "string") {
+        return jsonLdDate;
+    }
+
+    return null;
+}
+
+function getAuthors(document: Document): string[] {
+    const authors = new Set<string>();
+
+    const metaAuthor = document
+        .querySelector('meta[name="author"]')
+        ?.getAttribute("content");
+
+    if (metaAuthor?.trim()) {
+        authors.add(metaAuthor.trim());
+    }
+
+    const articleAuthors = document.querySelectorAll(
+        'meta[property="article:author"]'
+    );
+
+    for (const element of articleAuthors) {
+        const content = element.getAttribute("content");
+
+        if (content?.trim()) {
+            authors.add(content.trim());
+        }
+    }
+
+    const jsonLdAuthors = getJsonLdValue(
+        document,
+        "author"
+    );
+
+    if (Array.isArray(jsonLdAuthors)) {
+        for (const author of jsonLdAuthors) {
+            if (typeof author === "string") {
+                authors.add(author.trim());
+            } else if (
+                author &&
+                typeof author === "object" &&
+                typeof author.name === "string"
+            ) {
+                authors.add(author.name.trim());
+            }
+        }
+    } else if (
+        jsonLdAuthors &&
+        typeof jsonLdAuthors === "object" &&
+        "name" in jsonLdAuthors &&
+        typeof jsonLdAuthors.name === "string"
+    ) {
+        authors.add(jsonLdAuthors.name.trim());
+    } else if (typeof jsonLdAuthors === "string") {
+        authors.add(jsonLdAuthors.trim());
+    }
+
+    return [...authors];
+}
+
 app.post("/api/extract", async (req, res) => {
     try {
         const url = req.body.url;
@@ -640,7 +889,7 @@ app.post("/api/extract", async (req, res) => {
         const originalContent = extractBlocks(originalDom.window.document.body, url, true);
         const articleContent = extractBlocks(articleDOM.window.document.body, url, false);
         articleContent.forEach((block, index) => {
-            block.readIndex = index;
+            //block.readIndex = index;
         });
         const usedExactMatches = new Set<number>();
 
@@ -767,6 +1016,14 @@ app.post("/api/extract", async (req, res) => {
             ??
             originalDom.window.document.title.trim();
 
+        const publishDate = getPublishDate(
+            originalDom.window.document
+        );
+
+        const authors = getAuthors(
+            originalDom.window.document
+        );
+
         res.json({
             url,
             readabilityTitle,
@@ -774,6 +1031,8 @@ app.post("/api/extract", async (req, res) => {
             articleContent,
             missingContent,
             thumbnailUrl,
+            publishDate,
+            authors
         });
     } catch (error) {
         console.error(error);
@@ -784,7 +1043,7 @@ app.post("/api/extract", async (req, res) => {
     }
 });
 
-app.post("/api/send", async (req, res) => {
+app.post("/api/sendinstapaper", async (req, res) => {
     try {
         const url = req.body.url as string;
         const title = req.body.title as string;
@@ -798,7 +1057,7 @@ app.post("/api/send", async (req, res) => {
             });
         }
 
-        const html = blocksToHtml(finalContent, title, includeHeader, thumbnailurl);
+        const html = blocksToHtml(finalContent, title, includeHeader, thumbnailurl, url);
 
         const instapaperUrl =
             "https://www.instapaper.com/api/1/bookmarks/add";
@@ -858,6 +1117,92 @@ app.post("/api/send", async (req, res) => {
 
         res.status(500).json({
             error: "Failed to send article to Instapaper",
+        });
+    }
+});
+
+app.post("/api/sendwallabag", async (req, res) => {
+    try {
+        const url = req.body.url as string;
+        const title = req.body.title as string;
+        const finalContent = req.body.finalContent as ArticleBlock[];
+        const includeHeader = req.body.includeHeader as boolean;
+        const thumbnailurl = req.body.thumbnailUrl as string | null;
+        const previewResult = thumbnailurl
+            ? await saveImageForWallabag(
+                thumbnailurl,
+                url
+            )
+            : null;
+
+        const localPreviewPicture =
+            previewResult?.url ?? "";
+        const publishDate = req.body.publishDate as string;
+        const authors = req.body.authors as string;
+
+        if (!url || !title || !Array.isArray(finalContent)) {
+            return res.status(400).json({
+                error: "Invalid request body",
+            });
+        }
+        wallabagAuth();
+        const html = await blocksToHtml(finalContent, title, includeHeader, thumbnailurl, url);
+
+        const instapaperUrl =
+            "http://192.168.0.199:8080/api/entries";
+
+        const body = {
+            url,
+            title,
+            content: html,
+            published_at: publishDate,
+            authors,
+            preview_picture: localPreviewPicture
+        };
+
+        const requestData = {
+            url: instapaperUrl,
+            method: "POST",
+            data: body,
+        };
+
+        const formData = new URLSearchParams(body);
+
+        const response = await fetch(instapaperUrl, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${wallabagAccessToken}`,
+                "Content-Type":
+                    "application/x-www-form-urlencoded",
+            },
+            body: formData.toString(),
+        });
+
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            console.error(
+                "Wallabag error:",
+                response.status,
+                responseText
+            );
+
+            return res.status(502).json({
+                error: "Wallabag request failed",
+                status: response.status,
+                details: responseText,
+            });
+        }
+
+        res.json({
+            message: "Sent to Wallabag",
+            response: responseText,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            error: "Failed to send article to Wallabag",
         });
     }
 });
