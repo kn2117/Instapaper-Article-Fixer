@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Article Fixer",
+  "version": "1.0.0",
+
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://192.168.0.199:3000/*",
+    "https://*.patreon.com/*",
+    "https://*.patreonusercontent.com/*"
+  ],
+
+  "action": {
+    "default_title": "Send to Article Fixer"
+  },
+
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "service_worker": "background.js"
+  }
+}
