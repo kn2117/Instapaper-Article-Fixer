@@ -911,6 +911,7 @@ function App() {
 
                         <div className="editBlockActions">
                             <button
+                                className="cancelButton"
                                 type="button"
                                 onClick={() => {
                                     setEditingBlock(null);
@@ -921,6 +922,7 @@ function App() {
                             </button>
 
                             <button
+                                className="saveButton"
                                 type="button"
                                 onClick={saveEditedBlock}
                             >
