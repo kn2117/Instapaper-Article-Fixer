@@ -9,9 +9,139 @@ type CachedImage = {
     data: Buffer;
 };
 
+type ImageNameMap = Record<string, string>;
+
 const imageCache = new Map<string, CachedImage>();
 
-function getWallabagImageInfo(
+export function cacheImage(
+    url: string,
+    contentType: string,
+    data: Buffer
+) {
+    const cachedImage: CachedImage = {
+        contentType,
+        data,
+    };
+
+    imageCache.set(
+        url,
+        cachedImage
+    );
+
+    imageCache.set(
+        imageCacheKey(url),
+        cachedImage
+    );
+}
+
+async function loadImageNameMap(
+    directory: string
+): Promise<ImageNameMap> {
+    const mapPath =
+        path.join(directory, "images.json");
+
+    try {
+        const contents =
+            await fs.readFile(
+                mapPath,
+                "utf8"
+            );
+
+        return JSON.parse(contents);
+    } catch {
+        return {};
+    }
+}
+
+async function saveImageNameMap(
+    directory: string,
+    map: ImageNameMap
+) {
+    const mapPath =
+        path.join(directory, "images.json");
+
+    await fs.writeFile(
+        mapPath,
+        JSON.stringify(
+            map,
+            null,
+            2
+        ),
+        "utf8"
+    );
+}
+
+async function getMappedFilename(
+    directory: string,
+    originalUrl: string,
+    originalFilename: string
+): Promise<{
+    filename: string;
+    map: ImageNameMap;
+}> {
+    const map =
+        await loadImageNameMap(directory);
+
+    /*
+     * Reuse the exact same filename
+     * if we've already seen this URL.
+     */
+    const existing =
+        map[originalUrl];
+
+    if (existing) {
+        return {
+            filename: existing,
+            map,
+        };
+    }
+
+    const extension =
+        path.extname(
+            originalFilename
+        );
+
+    const basename =
+        path.basename(
+            originalFilename,
+            extension
+        );
+
+    let filename =
+        originalFilename;
+
+    let counter = 2;
+
+    const usedNames =
+        new Set(
+            Object.values(map)
+        );
+
+    while (
+        usedNames.has(filename) ||
+        await fileExists(
+            path.join(
+                directory,
+                filename
+            )
+        )
+    ) {
+        filename =
+            `${basename}-${counter}${extension}`;
+
+        counter++;
+    }
+
+    map[originalUrl] =
+        filename;
+
+    return {
+        filename,
+        map,
+    };
+}
+
+async function getWallabagImageInfo(
     originalUrl: string,
     articleUrl: string
 ) {
@@ -22,32 +152,74 @@ function getWallabagImageInfo(
         process.env.WALLABAG_PUBLIC_URL!;
 
     const articleSubdir =
-        getArticleImageSubdir(articleUrl);
+        getArticleImageSubdir(
+            articleUrl
+        );
 
     const parsedUrl =
         new URL(originalUrl);
 
-    let filename =
+    let originalFilename =
         decodeURIComponent(
             parsedUrl.pathname
                 .split("/")
                 .pop() ?? ""
         );
 
-    if (!filename) {
-        filename = "image.jpg";
+    if (!originalFilename) {
+        originalFilename =
+            "image.jpg";
     }
 
-    filename = filename.replace(
-        /[^a-zA-Z0-9._-]/g,
-        "_"
-    );
+    originalFilename =
+        originalFilename.replace(
+            /[^a-zA-Z0-9._-]/g,
+            "_"
+        );
 
     const destinationDir =
         path.join(
             imageDir,
             articleSubdir
         );
+
+    /*
+     * Make sure the per-article directory
+     * exists before reading/writing images.json.
+     */
+    await fs.mkdir(
+        destinationDir,
+        {
+            recursive: true,
+        }
+    );
+
+    /*
+     * This is where duplicate filenames are
+     * resolved:
+     *
+     * image.jpg
+     * image-2.jpg
+     * image-3.jpg
+     *
+     * Existing URLs reuse their old mapping.
+     */
+    const {
+        filename,
+        map,
+    } = await getMappedFilename(
+        destinationDir,
+        originalUrl,
+        originalFilename
+    );
+
+    /*
+     * Persist the URL -> filename mapping.
+     */
+    await saveImageNameMap(
+        destinationDir,
+        map
+    );
 
     const destination =
         path.join(
@@ -66,6 +238,7 @@ function getWallabagImageInfo(
         destinationDir,
         destination,
         wallabagUrl,
+        filename,
     };
 }
 
@@ -80,30 +253,48 @@ async function fileExists(
     }
 }
 
-function imageCacheKey(urlString: string): string {
+function imageCacheKey(
+    urlString: string
+): string {
     try {
-        const url = new URL(urlString);
+        const url =
+            new URL(urlString);
 
-        let filename =
+        const originalFilename =
             decodeURIComponent(
-                url.pathname.split("/").pop() ?? ""
+                url.pathname
+                    .split("/")
+                    .pop() ?? ""
             );
 
-        /*
-         * WordPress commonly generates variants like:
-         *
-         * Blog-5-1024x768.jpeg
-         * Blog-5-768x576.jpeg
-         * Blog-5-300x225.jpeg
-         *
-         * Treat those as the same underlying image.
-         */
-        filename = filename.replace(
-            /-\d+x\d+(?=\.[^.]+$)/,
-            ""
-        );
+        const normalizedFilename =
+            originalFilename
+                .replace(
+                    /-\d+x\d+(?=\.[^.]+$)/,
+                    ""
+                )
+                .replace(
+                    /-scaled(?=\.[^.]+$)/,
+                    ""
+                );
 
-        return filename.toLowerCase();
+        if (
+            normalizedFilename !==
+            originalFilename
+        ) {
+            const normalizedPath =
+                url.pathname.replace(
+                    originalFilename,
+                    normalizedFilename
+                );
+
+            return (
+                url.origin +
+                normalizedPath
+            ).toLowerCase();
+        }
+
+        return url.href.toLowerCase();
     } catch {
         return urlString.toLowerCase();
     }
@@ -275,11 +466,11 @@ async function preparePageImages(
         Don't sit around waiting for blocked images.
     */
     if (
-    !stopOnBlockedImages ||
-    getBlockedImageCount() < 5
-) {
-    await page.waitForTimeout(1000);
-}
+        !stopOnBlockedImages ||
+        getBlockedImageCount() < 5
+    ) {
+        await page.waitForTimeout(1000);
+    }
 
     /*
         Preserve whichever image URL the browser actually
@@ -501,7 +692,7 @@ export async function saveImageForWallabag(
         destinationDir,
         destination,
         wallabagUrl,
-    } = getWallabagImageInfo(
+    } = await getWallabagImageInfo(
         originalUrl,
         articleUrl
     );
@@ -797,13 +988,13 @@ export async function prepareWallabagImages(
      */
     for (const imageUrl of stillMissing) {
         const {
-            destinationDir,
-            destination,
-            wallabagUrl,
-        } = getWallabagImageInfo(
-            imageUrl,
-            articleUrl
-        );
+    destinationDir,
+    destination,
+    wallabagUrl,
+} = await getWallabagImageInfo(
+    imageUrl,
+    articleUrl
+);
 
         /*
          * Something may already have appeared while

@@ -22,7 +22,8 @@ function App() {
         block => block.category === "other"
     );
     const [selectedBlocks, setSelectedBlocks] = useState<ArticleBlock[]>([]);
-    const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+    const [lastSelectedSourceIndex, setLastSelectedSourceIndex] =
+        useState<number | null>(null);
     const displayedBlocks = [
         ...articleBlocks,
         ...selectedBlocks,
@@ -48,7 +49,7 @@ function App() {
     const [disableSubmitButton, setDisableSubmitButton] = useState<boolean>(false);
     const [disableSendToInstapaperButton, setDisableSendToInstapaperButton] = useState<boolean>(false);
     const [disableSendToWallabagButton, setDisableSendToWallabagButton] = useState<boolean>(false);
-    const [includeHeader, setIncludeHeader] = useState<boolean>(true);
+    const [includeHeader, setIncludeHeader] = useState<boolean>(false);
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
     const [showThumbnailModal, setShowThumbnailModal] = useState(false);
     const [customThumbnailUrl, setCustomThumbnailUrl] = useState("");
@@ -66,29 +67,143 @@ function App() {
         selectedTitleSource === "readability"
             ? readabilityTitle
             : metadataTitle;
-    const previewBlocks: ArticleBlock[] = includeHeader
-        ? [
-            {
-                type: "heading",
-                level: 1,
-                html: title,
-                text: title,
-            },
-            ...displayedBlocks,
-        ]
-        : displayedBlocks;
-    const firstHeadingIndex = previewBlocks.findIndex(
-        block => block.type === "heading"
-    );
+
+    const previewTitle =
+        destination === "wallabag"
+            ? articleTitle
+            : title;
+    const previewBlocks: ArticleBlock[] =
+        includeHeader
+            ? [
+                {
+                    type: "heading",
+                    level: 1,
+                    html: previewTitle,
+                    text: previewTitle,
+                    id: "preview-title",
+                },
+                ...displayedBlocks,
+            ]
+            : displayedBlocks;
+    const [editingBlock, setEditingBlock] =
+        useState<ArticleBlock | null>(null);
+
+    const [editedHtml, setEditedHtml] =
+        useState("");
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const incomingUrl = params.get("url");
+        const params =
+            new URLSearchParams(
+                window.location.search
+            );
+
+        const incomingUrl =
+            params.get("url");
 
         if (incomingUrl) {
             setUrl(incomingUrl);
         }
+
+        const articleId =
+            params.get("articleId");
+
+        if (!articleId) {
+            return;
+        }
+
+        async function loadArticle() {
+            const response =
+                await fetch(
+                    `${import.meta.env.VITE_EXTRACT_API}` +
+                    `/api/extracted/${encodeURIComponent(articleId!)}`
+                );
+
+            if (!response.ok) {
+                console.error(
+                    "Could not load extension article"
+                );
+
+                return;
+            }
+
+            const article =
+                await response.json();
+
+            setUrl(
+                article.url ?? ""
+            );
+
+            setProcessedUrl(
+                article.url ?? ""
+            );
+
+            setReadabilityTitle(
+                article.readabilityTitle ?? ""
+            );
+
+            setMetadataTitle(
+                article.metadataTitle ?? ""
+            );
+
+            setArticleTitle(
+                article.readabilityTitle ?? ""
+            );
+
+            setArticleBlocks(
+                article.articleContent ?? []
+            );
+
+            setMissingBlocks(
+                article.missingContent ?? []
+            );
+
+            setThumbnailUrl(
+                article.thumbnailUrl ?? null
+            );
+
+            setPublishDate(
+                article.publishDate ?? ""
+            );
+
+            setAuthors(
+                article.authors?.join(", ") ?? ""
+            );
+        }
+
+        loadArticle();
     }, []);
+
+    function utcToLocalDatetimeInput(
+        value: string | null | undefined
+    ): string {
+        if (!value) {
+            return "";
+        }
+
+        const date = new Date(value);
+
+        const pad = (n: number) =>
+            String(n).padStart(2, "0");
+
+        return (
+            `${date.getFullYear()}-` +
+            `${pad(date.getMonth() + 1)}-` +
+            `${pad(date.getDate())}T` +
+            `${pad(date.getHours())}:` +
+            `${pad(date.getMinutes())}:` +
+            `${pad(date.getSeconds())}`
+        );
+    }
+
+    function localDatetimeInputToUtc(
+        value: string
+    ): string {
+        if (!value) {
+            return "";
+        }
+
+        return new Date(value).toISOString();
+    }
 
     async function handleProcessWebpageSubmit(e: React.SubmitEvent<HTMLFormElement>) {
         setDisableSubmitButton(true);
@@ -151,41 +266,49 @@ function App() {
         setDisableSendToWallabagButton(true);
         e.preventDefault();
 
-        await sendArticleToWallabag(url, title, displayedBlocks, includeHeader, thumbnailUrl, publishDate, authors);
+        await sendArticleToWallabag(url, articleTitle, displayedBlocks, includeHeader, thumbnailUrl, publishDate, authors);
         setDisableSendToWallabagButton(false);
     }
 
-    function moveDisplayedBlockToMissing(block: ArticleBlock) {
+    function moveDisplayedBlockToMissing(
+        block: ArticleBlock
+    ) {
         setArticleBlocks((current) =>
             current.filter(
                 currentBlock =>
-                    currentBlock.sourceIndex !== block.sourceIndex
+                    currentBlock.id !== block.id
             )
         );
 
         setSelectedBlocks((current) =>
             current.filter(
                 currentBlock =>
-                    currentBlock.sourceIndex !== block.sourceIndex
+                    currentBlock.id !== block.id
             )
         );
 
         setMissingBlocks((current) => {
-            const alreadyThere = current.some(
-                currentBlock =>
-                    currentBlock.sourceIndex === block.sourceIndex
-            );
+            const alreadyThere =
+                current.some(
+                    currentBlock =>
+                        currentBlock.id === block.id
+                );
 
             if (alreadyThere) {
                 return current;
             }
 
-            return [...current, block].sort((a, b) => {
+            return [
+                ...current,
+                block,
+            ].sort((a, b) => {
                 const aIndex =
-                    a.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+                    a.sourceIndex ??
+                    Number.MAX_SAFE_INTEGER;
 
                 const bIndex =
-                    b.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+                    b.sourceIndex ??
+                    Number.MAX_SAFE_INTEGER;
 
                 return aIndex - bIndex;
             });
@@ -197,45 +320,199 @@ function App() {
         index: number,
         shiftKey: boolean
     ) {
-        if (shiftKey && lastSelectedIndex !== null) {
-            const start = Math.min(lastSelectedIndex, index);
-            const end = Math.max(lastSelectedIndex, index);
+        if (
+            shiftKey &&
+            lastSelectedSourceIndex !== null &&
+            block.sourceIndex !== undefined
+        ) {
+            const start = Math.min(
+                lastSelectedSourceIndex,
+                block.sourceIndex
+            );
 
-            const range = likelyMissing.slice(start, end + 1);
+            const end = Math.max(
+                lastSelectedSourceIndex,
+                block.sourceIndex
+            );
+
+            const range = likelyMissing.filter(
+                candidate =>
+                    candidate.sourceIndex !== undefined &&
+                    candidate.sourceIndex >= start &&
+                    candidate.sourceIndex <= end
+            );
 
             setSelectedBlocks((current) => {
                 const existing = new Set(
-                    current.map(block => block.sourceIndex)
+                    current.map(
+                        block => block.sourceIndex
+                    )
                 );
 
                 const newBlocks = range.filter(
-                    block => !existing.has(block.sourceIndex)
+                    block =>
+                        !existing.has(
+                            block.sourceIndex
+                        )
                 );
 
-                return [...current, ...newBlocks];
+                return [
+                    ...current,
+                    ...newBlocks,
+                ];
             });
 
-            setLastSelectedIndex(index);
+            setLastSelectedSourceIndex(
+                block.sourceIndex
+            );
+
             return;
         }
 
         setSelectedBlocks((current) => {
             const isSelected = current.some(
                 selected =>
-                    selected.sourceIndex === block.sourceIndex
+                    selected.sourceIndex ===
+                    block.sourceIndex
             );
 
             if (isSelected) {
                 return current.filter(
                     selected =>
-                        selected.sourceIndex !== block.sourceIndex
+                        selected.sourceIndex !==
+                        block.sourceIndex
                 );
             }
 
-            return [...current, block];
+            return [
+                ...current,
+                block,
+            ];
         });
 
-        setLastSelectedIndex(index);
+        if (block.sourceIndex !== undefined) {
+            setLastSelectedSourceIndex(
+                block.sourceIndex
+            );
+        }
+    }
+
+    function formatHtml(html: string): string {
+        const container = document.createElement("div");
+        container.innerHTML = html;
+
+        const lines: string[] = [];
+
+        function walk(node: Node, depth: number) {
+            const indent = "  ".repeat(depth);
+
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent?.trim();
+
+                if (text) {
+                    lines.push(indent + text);
+                }
+
+                return;
+            }
+
+            if (!(node instanceof HTMLElement)) {
+                return;
+            }
+
+            const tag = node.tagName.toLowerCase();
+
+            const attributes = Array.from(node.attributes)
+                .map(attr => ` ${attr.name}="${attr.value}"`)
+                .join("");
+
+            const children = Array.from(node.childNodes);
+
+            if (children.length === 0) {
+                lines.push(
+                    `${indent}<${tag}${attributes}></${tag}>`
+                );
+
+                return;
+            }
+
+            const onlyText =
+                children.every(
+                    child => child.nodeType === Node.TEXT_NODE
+                );
+
+            if (onlyText) {
+                lines.push(
+                    `${indent}<${tag}${attributes}>${node.textContent ?? ""}</${tag}>`
+                );
+
+                return;
+            }
+
+            lines.push(
+                `${indent}<${tag}${attributes}>`
+            );
+
+            for (const child of children) {
+                walk(child, depth + 1);
+            }
+
+            lines.push(
+                `${indent}</${tag}>`
+            );
+        }
+
+        for (const child of Array.from(container.childNodes)) {
+            walk(child, 0);
+        }
+
+        return lines.join("\n");
+    }
+
+    function openBlockEditor(block: ArticleBlock) {
+        setEditingBlock(block);
+
+        setEditedHtml(
+            formatHtml(block.html ?? "")
+        );
+    }
+
+    function saveEditedBlock() {
+        if (!editingBlock) {
+            return;
+        }
+
+        const updatedBlock: ArticleBlock = {
+            ...editingBlock,
+            html: editedHtml,
+        };
+
+        setArticleBlocks(current =>
+            current.map(block =>
+                block.id === updatedBlock.id
+                    ? updatedBlock
+                    : block
+            )
+        );
+
+        setSelectedBlocks(current =>
+            current.map(block =>
+                block.id === updatedBlock.id
+                    ? updatedBlock
+                    : block
+            )
+        );
+
+        setMissingBlocks(current =>
+            current.map(block =>
+                block.id === updatedBlock.id
+                    ? updatedBlock
+                    : block
+            )
+        );
+
+        setEditingBlock(null);
+        setEditedHtml("");
     }
 
     return (
@@ -247,7 +524,7 @@ function App() {
                 }}>
                 {destination === "instapaper" ? "Instapaper" : "Wallabag"}
             </button>
-            <button
+            {processedUrl && (<button
                 type="button"
                 className="openArticleButton"
                 onClick={() => {
@@ -260,7 +537,7 @@ function App() {
                 disabled={!processedUrl}
             >
                 Open ↗
-            </button>
+            </button>)}
             <form onSubmit={handleProcessWebpageSubmit} className="articleUrlSubmission">
                 <input
                     className="articleUrlTextbox"
@@ -281,15 +558,36 @@ function App() {
                     <div className="displayedBlocks">
                         <div className="articlePreviewHeader">
                             {thumbnailUrl && (
-                                <img
-                                    className="thumbnailPreview"
-                                    src={
-                                        `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
-                                        encodeURIComponent(thumbnailUrl)
-                                    }
-                                    alt=""
-                                    onClick={() => setShowThumbnailModal(true)}
-                                />
+                                <div className="thumbnailPreviewWrapper">
+                                    <img
+                                        className="thumbnailPreview"
+                                        src={
+                                            `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
+                                            encodeURIComponent(thumbnailUrl)
+                                        }
+                                        alt=""
+                                        onClick={() =>
+                                            setShowThumbnailModal(true)
+                                        }
+                                    />
+
+                                    <button
+                                        type="button"
+                                        className="openThumbnailSource"
+                                        title="Open original image"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+
+                                            window.open(
+                                                thumbnailUrl,
+                                                "_blank",
+                                                "noopener,noreferrer"
+                                            );
+                                        }}
+                                    >
+                                        ↗
+                                    </button>
+                                </div>
                             )}
                             {!thumbnailUrl && (
                                 <button
@@ -341,23 +639,44 @@ function App() {
 
                                         <div className="thumbnailChoices">
                                             {availableImageUrls.map((src) => (
-                                                <button
+                                                <div
                                                     key={src}
-                                                    type="button"
-                                                    className="thumbnailChoice"
-                                                    onClick={() => {
-                                                        setThumbnailUrl(src);
-                                                        setShowThumbnailModal(false);
-                                                    }}
+                                                    className="thumbnailChoiceWrapper"
                                                 >
-                                                    <img
-                                                        src={
-                                                            `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
-                                                            encodeURIComponent(src)
-                                                        }
-                                                        alt=""
-                                                    />
-                                                </button>
+                                                    <button
+                                                        type="button"
+                                                        className="thumbnailChoice"
+                                                        onClick={() => {
+                                                            setThumbnailUrl(src);
+                                                            setShowThumbnailModal(false);
+                                                        }}
+                                                    >
+                                                        <img
+                                                            src={
+                                                                `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
+                                                                encodeURIComponent(src)
+                                                            }
+                                                            alt=""
+                                                        />
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        className="openThumbnailChoiceSource"
+                                                        title="Open original image"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+
+                                                            window.open(
+                                                                src,
+                                                                "_blank",
+                                                                "noopener,noreferrer"
+                                                            );
+                                                        }}
+                                                    >
+                                                        ↗
+                                                    </button>
+                                                </div>
                                             ))}
                                         </div>
 
@@ -379,18 +698,25 @@ function App() {
                                 (
                                     <div className="articleInfo">
                                         <input className="articleTitleBox" type="text" value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} />
-                                        <input className="articlePublishDateBox" type="datetime-local" value={publishDate} onChange={(e) => setPublishDate(e.target.value)} />
+                                        <input
+                                            className="publishDateBox"
+                                            type="datetime-local"
+                                            value={utcToLocalDatetimeInput(publishDate)}
+                                            onChange={(e) => {
+                                                setPublishDate(
+                                                    localDatetimeInputToUtc(
+                                                        e.target.value
+                                                    )
+                                                );
+                                            }}
+                                        />
                                         <input className="articleAuthorsBox" type="text" placeholder="Authors" value={authors} onChange={(e) => setAuthors(e.target.value)} />
                                     </div>
                                 )}
                         </div>
 
                         <div className="articleBlocksList">
-                            {previewBlocks.map((block, index) => {
-                                if (index === firstHeadingIndex) {
-                                    return null;
-                                }
-
+                            {previewBlocks.map((block) => {
                                 if (destination === "wallabag" &&
                                     block.sourceIndex !== undefined) {
                                     return (
@@ -402,6 +728,19 @@ function App() {
                                             }
                                         >
                                             <ArticleBlockView block={block} />
+
+                                            {block.type !== "image" && (
+                                                <button
+                                                    type="button"
+                                                    className="editBlockButton"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openBlockEditor(block);
+                                                    }}
+                                                >
+                                                    ✎
+                                                </button>
+                                            )}
                                         </div>
                                     );
                                 }
@@ -527,6 +866,63 @@ function App() {
                     {destination === "wallabag" && (<button type="submit" onClick={handleSendToWallabagSubmit} disabled={disableSendToWallabagButton} className="sendToInstapaperButton">
                         Send to Wallabag
                     </button>)}
+                </div>
+            )}
+            {editingBlock && (
+                <div
+                    className="editBlockOverlay"
+                    onClick={() => {
+                        setEditingBlock(null);
+                        setEditedHtml("");
+                    }}
+                >
+                    <div
+                        className="editBlockModal"
+                        onClick={(e) =>
+                            e.stopPropagation()
+                        }
+                    >
+                        <h2>Edit raw HTML</h2>
+
+                        <textarea
+                            className="editBlockTextArea"
+                            value={editedHtml}
+                            autoFocus
+                            onChange={(e) =>
+                                setEditedHtml(
+                                    e.target.value
+                                )
+                            }
+                            onKeyDown={(e) => {
+                                if (
+                                    (e.metaKey || e.ctrlKey) &&
+                                    e.key.toLowerCase() === "a"
+                                ) {
+                                    e.preventDefault();
+                                    e.currentTarget.select();
+                                }
+                            }}
+                        />
+
+                        <div className="editBlockActions">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setEditingBlock(null);
+                                    setEditedHtml("");
+                                }}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={saveEditedBlock}
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
             {disableSubmitButton && (

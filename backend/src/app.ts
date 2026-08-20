@@ -7,6 +7,7 @@ import OAuth from "oauth-1.0a";
 import crypto from "crypto";
 import "dotenv/config";
 import {
+    cacheImage,
     fetchArticleHtml,
     getCachedImage,
     harvestArticleImages,
@@ -72,9 +73,11 @@ async function wallabagAuth() {
 const app = express();
 const PORT = 3000;
 app.use(cors({
-    origin: "http://localhost:5173"
+    origin: true,
 }));
-app.use(express.json());
+app.use(express.json({
+    limit: "10mb",
+}));
 
 app.get("/api/hello", (_req, res) => {
     res.json({ message: "Hello from Express" });
@@ -84,6 +87,28 @@ type ImageCandidate = {
     url: string;
     width?: number;
 };
+
+type PendingArticle = {
+    createdAt: number;
+    article: any;
+};
+
+const pendingArticles =
+    new Map<string, PendingArticle>();
+
+setInterval(() => {
+    const cutoff =
+        Date.now() - 10 * 60 * 1000;
+
+    for (
+        const [id, item]
+        of pendingArticles
+    ) {
+        if (item.createdAt < cutoff) {
+            pendingArticles.delete(id);
+        }
+    }
+}, 60_000);
 
 function blockKey(block: ArticleBlock): string {
     if (block.type === "image") {
@@ -868,172 +893,210 @@ function getAuthors(document: Document): string[] {
     return [...authors];
 }
 
+async function extractFromHtml(
+    html: string,
+    url: string,
+) {
+    const originalDom = new JSDOM(html, { url });
+    const dom = new JSDOM(html, { url });
+
+    const article = new Readability(dom.window.document).parse();
+    const articleDOM = new JSDOM(article!.content!, { url });
+
+    if (!article) {
+        throw new Error(
+            "Could not extract article"
+        );
+    }
+    const originalContent = extractBlocks(originalDom.window.document.body, url, true);
+    const articleContent = extractBlocks(articleDOM.window.document.body, url, false);
+    articleContent.forEach((block, index) => {
+        //block.readIndex = index;
+    });
+    const usedExactMatches = new Set<number>();
+
+    for (const articleBlock of articleContent) {
+        let exactMatch = originalContent.find(originalBlock =>
+            blockKey(originalBlock) === blockKey(articleBlock) &&
+            originalBlock.sourceIndex !== undefined &&
+            !usedExactMatches.has(originalBlock.sourceIndex)
+        );
+
+        if (exactMatch?.sourceIndex !== undefined) {
+            articleBlock.sourceIndex = exactMatch.sourceIndex;
+            usedExactMatches.add(exactMatch.sourceIndex);
+            continue;
+        }
+
+        // Your fallback for split blocks
+        if (articleBlock.text) {
+            const articleText = articleBlock.text.trim();
+
+            // Only use substring matching for substantial text.
+            if (articleText.length >= 40) {
+                const fallbackMatch = originalContent.find(originalBlock => {
+                    if (
+                        originalBlock.type !== articleBlock.type ||
+                        !originalBlock.text
+                    ) {
+                        return false;
+                    }
+
+                    return originalBlock.text.includes(articleText);
+                });
+
+                if (fallbackMatch?.sourceIndex !== undefined) {
+                    articleBlock.sourceIndex = fallbackMatch.sourceIndex;
+                }
+            }
+        }
+    }
+
+    for (const articleBlock of articleContent) {
+        if (
+            articleBlock.type !== "image" ||
+            !articleBlock.src
+        ) {
+            continue;
+        }
+
+
+        const match = originalContent.find(
+            originalBlock =>
+                originalBlock.type === "image" &&
+                originalBlock.src &&
+                sameUnderlyingImage(
+                    articleBlock.src!,
+                    originalBlock.src
+                )
+        );
+
+        if (match?.src) {
+            // Replace Readability thumbnail with the
+            // better image from the original page
+            articleBlock.src = match.src;
+
+            if (match.sourceIndex !== undefined) {
+                articleBlock.sourceIndex = match.sourceIndex;
+            }
+        }
+    }
+
+    const dedupedArticleContent =
+        articleContent.filter(
+            (block, index, blocks) => {
+                if (
+                    block.type !== "image" ||
+                    !block.src
+                ) {
+                    return true;
+                }
+
+                return !blocks
+                    .slice(0, index)
+                    .some(previous => {
+                        if (
+                            previous.type !== "image" ||
+                            !previous.src
+                        ) {
+                            return false;
+                        }
+
+                        return (
+                            previous.sourceIndex ===
+                            block.sourceIndex &&
+                            previous.src ===
+                            block.src
+                        );
+                    });
+            }
+        );
+
+    for (let i = 0; i < dedupedArticleContent.length; i++) {
+        const block = dedupedArticleContent[i];
+
+        if (block!.sourceIndex !== undefined) {
+            continue;
+        }
+
+        const previous = dedupedArticleContent
+            .slice(0, i)
+            .reverse()
+            .find(block => block.sourceIndex !== undefined);
+
+        const next = dedupedArticleContent
+            .slice(i + 1)
+            .find(block => block.sourceIndex !== undefined);
+
+        if (
+            previous?.sourceIndex !== undefined &&
+            next?.sourceIndex !== undefined
+        ) {
+            block!.sourceIndex = previous.sourceIndex;
+        }
+    }
+
+    const missingContent = originalContent
+        .filter(
+            block =>
+                !isOriginalBlockCovered(
+                    block,
+                    dedupedArticleContent
+                )
+        )
+        .map(block => ({
+            ...block,
+            category: classifyMissingBlock(
+                block,
+                article.title!
+            ),
+        }));
+
+    const thumbnailUrl = getThumbnailUrl(
+        originalDom.window.document,
+        url,
+        originalContent,
+        dedupedArticleContent
+    );
+
+    const readabilityTitle = article.title ?? "";
+
+    const metadataTitle =
+        originalDom.window.document
+            .querySelector('meta[property="og:title"]')
+            ?.getAttribute("content")
+            ?.trim()
+        ??
+        originalDom.window.document.title.trim();
+
+    const publishDate = getPublishDate(
+        originalDom.window.document
+    );
+
+    const authors = getAuthors(
+        originalDom.window.document
+    );
+    return ({
+        url,
+        readabilityTitle,
+        metadataTitle,
+        articleContent: dedupedArticleContent,
+        missingContent,
+        thumbnailUrl,
+        publishDate,
+        authors
+    })
+}
+
 app.post("/api/extract", async (req, res) => {
     try {
         const url = req.body.url;
 
         const html = await fetchArticleHtml(url);
 
-        const originalDom = new JSDOM(html, { url });
-        const dom = new JSDOM(html, { url });
+        const result = await extractFromHtml(html, url);
 
-        const article = new Readability(dom.window.document).parse();
-        const articleDOM = new JSDOM(article!.content!, { url });
-
-        if (!article) {
-            return res.status(422).json({
-                error: "Could not extract article",
-            });
-        }
-
-        const originalContent = extractBlocks(originalDom.window.document.body, url, true);
-        const articleContent = extractBlocks(articleDOM.window.document.body, url, false);
-        articleContent.forEach((block, index) => {
-            //block.readIndex = index;
-        });
-        const usedExactMatches = new Set<number>();
-
-        for (const articleBlock of articleContent) {
-            let exactMatch = originalContent.find(originalBlock =>
-                blockKey(originalBlock) === blockKey(articleBlock) &&
-                originalBlock.sourceIndex !== undefined &&
-                !usedExactMatches.has(originalBlock.sourceIndex)
-            );
-
-            if (exactMatch?.sourceIndex !== undefined) {
-                articleBlock.sourceIndex = exactMatch.sourceIndex;
-                usedExactMatches.add(exactMatch.sourceIndex);
-                continue;
-            }
-
-            // Your fallback for split blocks
-            if (articleBlock.text) {
-                const articleText = articleBlock.text.trim();
-
-                // Only use substring matching for substantial text.
-                if (articleText.length >= 40) {
-                    const fallbackMatch = originalContent.find(originalBlock => {
-                        if (
-                            originalBlock.type !== articleBlock.type ||
-                            !originalBlock.text
-                        ) {
-                            return false;
-                        }
-
-                        return originalBlock.text.includes(articleText);
-                    });
-
-                    if (fallbackMatch?.sourceIndex !== undefined) {
-                        articleBlock.sourceIndex = fallbackMatch.sourceIndex;
-                    }
-                }
-            }
-        }
-
-        for (const articleBlock of articleContent) {
-            if (
-                articleBlock.type !== "image" ||
-                !articleBlock.src
-            ) {
-                continue;
-            }
-
-            const match = originalContent.find(
-                originalBlock =>
-                    originalBlock.type === "image" &&
-                    originalBlock.src &&
-                    sameUnderlyingImage(
-                        articleBlock.src!,
-                        originalBlock.src
-                    )
-            );
-
-            if (match?.src) {
-                // Replace Readability thumbnail with the
-                // better image from the original page
-                articleBlock.src = match.src;
-
-                if (match.sourceIndex !== undefined) {
-                    articleBlock.sourceIndex = match.sourceIndex;
-                }
-            }
-        }
-
-        for (let i = 0; i < articleContent.length; i++) {
-            const block = articleContent[i];
-
-            if (block!.sourceIndex !== undefined) {
-                continue;
-            }
-
-            const previous = articleContent
-                .slice(0, i)
-                .reverse()
-                .find(block => block.sourceIndex !== undefined);
-
-            const next = articleContent
-                .slice(i + 1)
-                .find(block => block.sourceIndex !== undefined);
-
-            if (
-                previous?.sourceIndex !== undefined &&
-                next?.sourceIndex !== undefined
-            ) {
-                block!.sourceIndex = previous.sourceIndex;
-            }
-        }
-
-        const missingContent = originalContent
-            .filter(
-                block =>
-                    !isOriginalBlockCovered(
-                        block,
-                        articleContent
-                    )
-            )
-            .map(block => ({
-                ...block,
-                category: classifyMissingBlock(
-                    block,
-                    article.title!
-                ),
-            }));
-
-        const thumbnailUrl = getThumbnailUrl(
-            originalDom.window.document,
-            url,
-            originalContent,
-            articleContent
-        );
-
-        const readabilityTitle = article.title ?? "";
-
-        const metadataTitle =
-            originalDom.window.document
-                .querySelector('meta[property="og:title"]')
-                ?.getAttribute("content")
-                ?.trim()
-            ??
-            originalDom.window.document.title.trim();
-
-        const publishDate = getPublishDate(
-            originalDom.window.document
-        );
-
-        const authors = getAuthors(
-            originalDom.window.document
-        );
-
-        res.json({
-            url,
-            readabilityTitle,
-            metadataTitle,
-            articleContent,
-            missingContent,
-            thumbnailUrl,
-            publishDate,
-            authors
-        });
+        res.json(result);
     } catch (error) {
         console.error(error);
 
@@ -1041,6 +1104,123 @@ app.post("/api/extract", async (req, res) => {
             error: "Failed to extract article",
         });
     }
+});
+
+app.post(
+    "/api/cache-image",
+    express.raw({
+        type: "application/octet-stream",
+        limit: "50mb",
+    }),
+    (req, res) => {
+        try {
+            const imageUrl =
+                req.query.url;
+
+            const contentType =
+                req.query.contentType;
+
+            if (
+                typeof imageUrl !== "string" ||
+                typeof contentType !== "string"
+            ) {
+                return res.status(400).json({
+                    error:
+                        "Missing url or contentType",
+                });
+            }
+
+            if (!Buffer.isBuffer(req.body)) {
+                return res.status(400).json({
+                    error:
+                        "Expected binary image body",
+                });
+            }
+
+            cacheImage(
+                imageUrl,
+                contentType,
+                req.body
+            );
+
+            console.log(
+                "Cached extension image:",
+                imageUrl
+            );
+
+            res.json({
+                success: true,
+            });
+        } catch (error) {
+            console.error(
+                "Could not cache extension image:",
+                error
+            );
+
+            res.status(500).json({
+                error:
+                    "Could not cache image",
+            });
+        }
+    }
+);
+
+app.post("/api/extract-html", async (req, res) => {
+    try {
+        const {
+    url,
+    html,
+} = req.body;
+
+        if (
+            typeof url !== "string" ||
+            typeof html !== "string"
+        ) {
+            return res.status(400).json({
+                error: "Invalid request body",
+            });
+        }
+
+        const article =
+            await extractFromHtml(
+                html,
+                url
+            );
+
+        const id =
+            crypto.randomUUID();
+
+        pendingArticles.set(id, {
+            createdAt: Date.now(),
+            article,
+        });
+
+        res.json({
+            id,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            error:
+                "Failed to extract supplied HTML",
+        });
+    }
+});
+
+app.get("/api/extracted/:id", (req, res) => {
+    const item =
+        pendingArticles.get(
+            req.params.id
+        );
+
+    if (!item) {
+        return res.status(404).json({
+            error: "Article not found",
+        });
+    }
+
+    res.json(item.article);
 });
 
 app.post("/api/sendinstapaper", async (req, res) => {
@@ -1057,7 +1237,7 @@ app.post("/api/sendinstapaper", async (req, res) => {
             });
         }
 
-        const html = blocksToHtml(finalContent, title, includeHeader, thumbnailurl, url);
+        const html = await blocksToHtml(finalContent, title, includeHeader, thumbnailurl, url);
 
         const instapaperUrl =
             "https://www.instapaper.com/api/1/bookmarks/add";
@@ -1145,8 +1325,20 @@ app.post("/api/sendwallabag", async (req, res) => {
                 error: "Invalid request body",
             });
         }
-        wallabagAuth();
+        await wallabagAuth();
         const html = await blocksToHtml(finalContent, title, includeHeader, thumbnailurl, url);
+
+        const chickenIndex = html.indexOf("🍗");
+
+        if (chickenIndex !== -1) {
+            console.log(
+                "CHICKEN CONTEXT:",
+                html.slice(
+                    Math.max(0, chickenIndex - 300),
+                    chickenIndex + 300
+                )
+            );
+        }
 
         const instapaperUrl =
             "http://192.168.0.199:8080/api/entries";
@@ -1168,6 +1360,18 @@ app.post("/api/sendwallabag", async (req, res) => {
 
         const formData = new URLSearchParams(body);
 
+        const encodedBody = formData.toString();
+
+        console.log(
+            "REQUEST HAS CHICKEN UTF-8:",
+            encodedBody.includes("%F0%9F%8D%97")
+        );
+
+        console.log(
+            "REQUEST HAS CORRUPTED F357:",
+            encodedBody.toUpperCase().includes("%EF%8D%97")
+        );
+
         const response = await fetch(instapaperUrl, {
             method: "POST",
             headers: {
@@ -1175,10 +1379,72 @@ app.post("/api/sendwallabag", async (req, res) => {
                 "Content-Type":
                     "application/x-www-form-urlencoded",
             },
-            body: formData.toString(),
+            body: encodedBody,
         });
 
         const responseText = await response.text();
+
+        console.log(
+            "WALLABAG RESPONSE HAS CHICKEN:",
+            responseText.includes("🍗")
+        );
+
+        console.log(
+            "WALLABAG RESPONSE HAS F357:",
+            responseText.includes("\uF357")
+        );
+        console.log(
+            "WALLABAG RAW RESPONSE:",
+            responseText
+        );
+        const wallabagEntry =
+            JSON.parse(responseText);
+
+        console.log(
+            "CREATED WALLABAG ENTRY ID:",
+            wallabagEntry.id
+        );
+        const storedResponse =
+            await fetch(
+                `http://192.168.0.199:8080/api/entries/${wallabagEntry.id}`,
+                {
+                    headers: {
+                        "Authorization":
+                            `Bearer ${wallabagAccessToken}`,
+                    },
+                }
+            );
+
+        const storedEntry =
+            await storedResponse.json();
+
+        const storedContent =
+            storedEntry.content ?? "";
+
+        console.log(
+            "STORED HAS CHICKEN:",
+            storedContent.includes("\u{1F357}")
+        );
+
+        console.log(
+            "STORED HAS F357:",
+            storedContent.includes("\uF357")
+        );
+        for (const char of storedContent) {
+            const codePoint =
+                char.codePointAt(0)!;
+
+            if (codePoint > 127) {
+                console.log(
+                    "STORED NON-ASCII:",
+                    JSON.stringify(char),
+                    "U+" +
+                    codePoint
+                        .toString(16)
+                        .toUpperCase()
+                );
+            }
+        }
 
         if (!response.ok) {
             console.error(

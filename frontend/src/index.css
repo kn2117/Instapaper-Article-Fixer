@@ -144,14 +144,14 @@
 }
 
 .thumbnailPreview {
-    width: 8rem;
-    height: 8rem;
-    object-fit: cover;
-    border-radius: 12px;
-    flex-shrink: 0;
-    box-shadow: 0px 0px 5px #aaa;
-}
+    width: 100%;
+    height: 100%;
 
+    object-fit: cover;
+    box-shadow: 0 0 5px #aaa;
+
+    display: block;
+}
 .articlePreviewHeader h1 {
     margin: 0;
 }
@@ -252,6 +252,8 @@
 }
 
 .thumbnailChoice {
+    width: 100%;
+    height: 100%;
     padding: 0;
     border: none;
     background: none;
@@ -259,11 +261,12 @@
 }
 
 .thumbnailChoice img {
-    width: 100%;
-    aspect-ratio: 1;
-    object-fit: cover;
+    display: block;
 
-    border-radius: 10px;
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
 }
 
 .articleInfo {
@@ -274,4 +277,123 @@
 
 .articleTitleBox {
     field-sizing: content;
+}
+.articleAuthorsBox {
+    field-sizing: content;
+}
+.publishDateBox {
+    field-sizing: content;
+}
+
+.removableDisplayedBlock {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.editBlockButton {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+
+    border: none;
+    border-radius: 999px;
+    padding: 0.25rem 0.5rem;
+
+    cursor: pointer;
+    opacity: 0;
+}
+
+.removableDisplayedBlock:hover .editBlockButton {
+    opacity: 1;
+}
+
+.editBlockOverlay {
+    position: fixed;
+    inset: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(0, 0, 0, 0.25);
+    z-index: 2000;
+}
+
+.editBlockModal {
+    width: min(700px, 90vw);
+    padding: 1rem;
+
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 0 10px #aaa;
+}
+
+.editBlockTextArea {
+    width: 100%;
+    min-height: 12rem;
+
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.editBlockActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+
+    margin-top: 1rem;
+}
+
+.thumbnailPreviewWrapper {
+    position: relative;
+    width: 8rem;
+    height: 8rem;
+    flex-shrink: 0;
+}
+
+.openThumbnailSource {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+
+    border: none;
+    border-radius: 999px;
+    padding: 0.25rem 0.5rem;
+
+    cursor: pointer;
+
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.thumbnailPreviewWrapper:hover
+.openThumbnailSource {
+    opacity: 1;
+}
+
+.thumbnailChoiceWrapper {
+    position: relative;
+    width: 8rem;
+    height: 8rem;
+}
+
+.openThumbnailChoiceSource {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+
+    border: none;
+    border-radius: 999px;
+    padding: 0.25rem 0.5rem;
+
+    cursor: pointer;
+
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.thumbnailChoiceWrapper:hover
+.openThumbnailChoiceSource {
+    opacity: 1;
 }
