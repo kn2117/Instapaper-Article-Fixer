@@ -317,7 +317,6 @@ function App() {
 
     function toggleMissingBlock(
         block: ArticleBlock,
-        index: number,
         shiftKey: boolean
     ) {
         if (
@@ -760,7 +759,7 @@ function App() {
                         <h1>Potential missing blocks</h1>
 
                         <div className="missingBlocksList">
-                            {destination === "instapaper" && (likelyMissing.map((block, index) => (
+                            {destination === "instapaper" && (likelyMissing.map((block) => (
                                 <MissingBlockView
                                     key={block.id}
                                     block={block}
@@ -771,7 +770,6 @@ function App() {
                                     onToggle={(block, shiftKey) =>
                                         toggleMissingBlock(
                                             block,
-                                            index,
                                             shiftKey
                                         )
                                     }
@@ -780,7 +778,7 @@ function App() {
                             {destination === "wallabag" && (
                                 likelyMissing
                                     .filter((block) => !selectedBlocks.includes(block))
-                                    .map((block, index) => (
+                                    .map((block) => (
                                         <MissingBlockView
                                             key={block.id}
                                             block={block}
@@ -791,7 +789,6 @@ function App() {
                                             onToggle={(block, shiftKey) =>
                                                 toggleMissingBlock(
                                                     block,
-                                                    index,
                                                     shiftKey
                                                 )
                                             }
@@ -806,7 +803,7 @@ function App() {
                                 </summary>
 
                                 <div className="missingBlocksList">
-                                    {likelyJunk.map((block, index) => (
+                                    {likelyJunk.map((block) => (
                                         <MissingBlockView
                                             key={block.id}
                                             block={block}
@@ -817,7 +814,6 @@ function App() {
                                             onToggle={(block, shiftKey) =>
                                                 toggleMissingBlock(
                                                     block,
-                                                    index,
                                                     shiftKey
                                                 )
                                             }
