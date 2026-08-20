@@ -248,6 +248,18 @@ ext.action.onClicked.addListener(
                         const clone =
                             document.documentElement.cloneNode(true);
 
+                        clone
+                            .querySelector(
+                                "#__article_fixer_loading"
+                            )
+                            ?.remove();
+
+                        clone
+                            .querySelector(
+                                "#__article_fixer_loading_style"
+                            )
+                            ?.remove();
+
                         const clonedImages =
                             clone.querySelectorAll("img");
 
