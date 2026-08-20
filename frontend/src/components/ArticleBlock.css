@@ -99,6 +99,8 @@
 
     opacity: 0;
     transition: opacity 0.15s;
+
+    box-shadow: 0px 0px 5px #aaa;
 }
 
 .imageBlock {
@@ -107,9 +109,4 @@
 
 .imageBlock:hover .openOriginalImage {
     opacity: 1;
-}
-
-.openOriginalImage {
-    opacity: 0;
-    transition: opacity 0.15s;
 }

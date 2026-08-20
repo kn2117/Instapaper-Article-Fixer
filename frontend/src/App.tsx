@@ -516,27 +516,32 @@ function App() {
 
     return (
         <>
-            <h1>Alternative Article Extractor</h1>
-            <button
-                onClick={() => {
-                    setDestination(destination === "instapaper" ? "wallabag" : "instapaper");
-                }}>
-                {destination === "instapaper" ? "Instapaper" : "Wallabag"}
-            </button>
-            {processedUrl && (<button
-                type="button"
-                className="openArticleButton"
-                onClick={() => {
-                    window.open(
-                        processedUrl,
-                        "_blank",
-                        "noopener,noreferrer"
-                    );
-                }}
-                disabled={!processedUrl}
-            >
-                Open ↗
-            </button>)}
+            <div className="titleBar">
+                <h1 className="title">Alternative Article Extractor</h1>
+                <div className="settingsButtons">
+                    <button
+                        className="destinationSelector"
+                        onClick={() => {
+                            setDestination(destination === "instapaper" ? "wallabag" : "instapaper");
+                        }}>
+                        {destination === "instapaper" ? "Instapaper" : "Wallabag"}
+                    </button>
+                    {processedUrl && (<button
+                        type="button"
+                        className="openArticleButton"
+                        onClick={() => {
+                            window.open(
+                                processedUrl,
+                                "_blank",
+                                "noopener,noreferrer"
+                            );
+                        }}
+                        disabled={!processedUrl}
+                    >
+                        Open ↗
+                    </button>)}
+                </div>
+            </div>
             <form onSubmit={handleProcessWebpageSubmit} className="articleUrlSubmission">
                 <input
                     className="articleUrlTextbox"
@@ -609,6 +614,7 @@ function App() {
 
                                         <div className="customThumbnailInput">
                                             <input
+                                                className="customThumbnailTextBox"
                                                 type="url"
                                                 placeholder="Image URL"
                                                 value={customThumbnailUrl}
@@ -618,6 +624,7 @@ function App() {
                                             />
 
                                             <button
+                                                className="customThumbnailSubmit"
                                                 type="button"
                                                 onClick={() => {
                                                     if (!customThumbnailUrl.trim()) {
@@ -651,6 +658,7 @@ function App() {
                                                         }}
                                                     >
                                                         <img
+                                                            className="thumbnailChoiceImg"
                                                             src={
                                                                 `${import.meta.env.VITE_EXTRACT_API}/api/image?url=` +
                                                                 encodeURIComponent(src)
@@ -680,6 +688,7 @@ function App() {
                                         </div>
 
                                         <button
+                                            className="setThumbnailCancel"
                                             type="button"
                                             onClick={() =>
                                                 setShowThumbnailModal(false)
