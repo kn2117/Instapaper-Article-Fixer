@@ -290,7 +290,7 @@ function extractBlocks(root: Element, pageUrl: string, isOriginal: boolean): Art
             }
             return;
         }
-        if (tag === "p") {
+        if (tag === "p" || tag === "address") {
             const images = element.querySelectorAll(":scope > img");
             if (images.length === 1 && !element.textContent?.trim()) {
                 walkHtml(images[0]!);

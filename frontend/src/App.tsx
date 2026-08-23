@@ -233,7 +233,7 @@ function App() {
         setMissingBlocks([]);
         setSelectedBlocks([]);
         setUrl("");
-        setIncludeHeader(true);
+        setIncludeHeader(false);
 
         const article = await processArticle(
             submittedUrl,
