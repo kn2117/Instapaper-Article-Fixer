@@ -65,7 +65,7 @@ export async function sendArticleToInstapaper(url: string, title: string, displa
     console.log(responseBody.html);
 }
 
-export async function sendArticleToWallabag(url: string, title: string, displayedBlocks: ArticleBlock[], includeHeader: boolean, thumbnailUrl: string | null, publishDate: string, authors: string) {
+export async function sendArticleToWallabag(url: string, title: string, displayedBlocks: ArticleBlock[], includeHeader: boolean, thumbnailUrl: string | null, publishDate: string, authors: string, fromExtension: boolean) {
     const apiData = {
         url: url,
         title: title,
@@ -73,7 +73,8 @@ export async function sendArticleToWallabag(url: string, title: string, displaye
         includeHeader: includeHeader,
         thumbnailUrl: thumbnailUrl,
         publishDate: publishDate,
-        authors: authors
+        authors: authors,
+        fromExtension
     }
     const response = await fetch(`${import.meta.env.VITE_EXTRACT_API}/api/sendwallabag`, {
         method: 'POST',

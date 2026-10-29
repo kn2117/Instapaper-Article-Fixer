@@ -88,6 +88,16 @@ function ArticleBlockView({ block }: Props) {
         />
       );
 
+    case "table": {
+    return (
+        <table className="tableBlock"
+            dangerouslySetInnerHTML={{
+                __html: block.html ?? "",
+            }}
+        />
+    );
+}
+
     default:
       return null;
   }

@@ -5,6 +5,7 @@ import { processArticle, sendArticleToInstapaper, sendArticleToWallabag } from '
 import ArticleBlockView from './components/ArticleBlock';
 import MissingBlockView from './components/MissingBlock';
 import { RiExpandUpDownFill } from "react-icons/ri";
+import { AuthorsInput, TitleInput } from './components/Inputs';
 
 function App() {
     const [url, setUrl] = useState("");
@@ -22,29 +23,28 @@ function App() {
         block => block.category === "other"
     );
     const [selectedBlocks, setSelectedBlocks] = useState<ArticleBlock[]>([]);
-    const [lastSelectedSourceIndex, setLastSelectedSourceIndex] =
-        useState<number | null>(null);
+    const [lastMissingOrder, setLastMissingOrder] = useState<number | null>(null);
+    const [
+        lastDisplayedOrder,
+        setLastDisplayedOrder,
+    ] = useState<number | null>(null);
     const displayedBlocks = [
         ...articleBlocks,
         ...selectedBlocks,
     ].sort((a, b) => {
-        const aSource =
-            a.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+        const aOrder =
+            a.displayOrder ??
+            a.sourceIndex ??
+            a.readIndex ??
+            Number.MAX_SAFE_INTEGER;
 
-        const bSource =
-            b.sourceIndex ?? Number.MAX_SAFE_INTEGER;
+        const bOrder =
+            b.displayOrder ??
+            b.sourceIndex ??
+            b.readIndex ??
+            Number.MAX_SAFE_INTEGER;
 
-        if (aSource !== bSource) {
-            return aSource - bSource;
-        }
-
-        const aRead =
-            a.readIndex ?? Number.MAX_SAFE_INTEGER;
-
-        const bRead =
-            b.readIndex ?? Number.MAX_SAFE_INTEGER;
-
-        return aRead - bRead;
+        return aOrder - bOrder;
     });
     const [disableSubmitButton, setDisableSubmitButton] = useState<boolean>(false);
     const [disableSendToInstapaperButton, setDisableSendToInstapaperButton] = useState<boolean>(false);
@@ -60,6 +60,7 @@ function App() {
                 .map(block => block.src!)
         ),
     ];
+    const [fromExtension, setFromExtension] = useState(false);
     const [readabilityTitle, setReadabilityTitle] = useState("");
     const [metadataTitle, setMetadataTitle] = useState("");
     const [selectedTitleSource, setSelectedTitleSource] = useState<"readability" | "metadata">("readability");
@@ -108,6 +109,7 @@ function App() {
             params.get("articleId");
 
         if (!articleId) {
+            setFromExtension(false);
             return;
         }
 
@@ -168,6 +170,7 @@ function App() {
             setAuthors(
                 article.authors?.join(", ") ?? ""
             );
+            setFromExtension(true);
         }
 
         loadArticle();
@@ -266,7 +269,7 @@ function App() {
         setDisableSendToWallabagButton(true);
         e.preventDefault();
 
-        await sendArticleToWallabag(url, articleTitle, displayedBlocks, includeHeader, thumbnailUrl, publishDate, authors);
+        await sendArticleToWallabag(url, articleTitle, displayedBlocks, includeHeader, thumbnailUrl, publishDate, authors, fromExtension);
         setDisableSendToWallabagButton(false);
     }
 
@@ -315,83 +318,250 @@ function App() {
         });
     }
 
-    function toggleMissingBlock(
+    function getBlockOrder(
+        block: ArticleBlock
+    ): number | undefined {
+        return (
+            block.displayOrder ??
+            block.sourceIndex ??
+            block.readIndex
+        );
+    }
+
+    function getBlockRange(
+        blocks: ArticleBlock[],
+        startOrder: number,
+        endOrder: number
+    ): ArticleBlock[] {
+        const start =
+            Math.min(
+                startOrder,
+                endOrder
+            );
+
+        const end =
+            Math.max(
+                startOrder,
+                endOrder
+            );
+
+        return blocks.filter(
+            block => {
+                const order =
+                    getBlockOrder(block);
+
+                return (
+                    order !== undefined &&
+                    order >= start &&
+                    order <= end
+                );
+            }
+        );
+    }
+
+    function toggleDisplayedBlock(
         block: ArticleBlock,
         shiftKey: boolean
     ) {
-        if (
-            shiftKey &&
-            lastSelectedSourceIndex !== null &&
-            block.sourceIndex !== undefined
-        ) {
-            const start = Math.min(
-                lastSelectedSourceIndex,
-                block.sourceIndex
-            );
+        const currentOrder =
+            getBlockOrder(block);
 
-            const end = Math.max(
-                lastSelectedSourceIndex,
-                block.sourceIndex
-            );
-
-            const range = likelyMissing.filter(
-                candidate =>
-                    candidate.sourceIndex !== undefined &&
-                    candidate.sourceIndex >= start &&
-                    candidate.sourceIndex <= end
-            );
-
-            setSelectedBlocks((current) => {
-                const existing = new Set(
-                    current.map(
-                        block => block.sourceIndex
-                    )
-                );
-
-                const newBlocks = range.filter(
-                    block =>
-                        !existing.has(
-                            block.sourceIndex
-                        )
-                );
-
-                return [
-                    ...current,
-                    ...newBlocks,
-                ];
-            });
-
-            setLastSelectedSourceIndex(
-                block.sourceIndex
+        if (currentOrder === undefined) {
+            moveDisplayedBlockToMissing(
+                block
             );
 
             return;
         }
 
-        setSelectedBlocks((current) => {
-            const isSelected = current.some(
-                selected =>
-                    selected.sourceIndex ===
-                    block.sourceIndex
+        if (
+            shiftKey &&
+            lastDisplayedOrder !== null
+        ) {
+            const range =
+                getBlockRange(
+                    displayedBlocks,
+                    lastDisplayedOrder,
+                    currentOrder
+                ).filter(
+                    candidate =>
+                        candidate.id !==
+                        "preview-title"
+                );
+
+            const ids =
+                new Set(
+                    range.map(
+                        candidate =>
+                            candidate.id
+                    )
+                );
+
+            setArticleBlocks(
+                current =>
+                    current.filter(
+                        candidate =>
+                            !ids.has(
+                                candidate.id
+                            )
+                    )
             );
 
-            if (isSelected) {
-                return current.filter(
-                    selected =>
-                        selected.sourceIndex !==
-                        block.sourceIndex
+            setSelectedBlocks(
+                current =>
+                    current.filter(
+                        candidate =>
+                            !ids.has(
+                                candidate.id
+                            )
+                    )
+            );
+
+            setMissingBlocks(
+                current => {
+                    const existingIds =
+                        new Set(
+                            current.map(
+                                candidate =>
+                                    candidate.id
+                            )
+                        );
+
+                    const additions =
+                        range.filter(
+                            candidate =>
+                                !existingIds.has(
+                                    candidate.id
+                                )
+                        );
+
+                    return [
+                        ...current,
+                        ...additions,
+                    ].sort(
+                        (a, b) =>
+                            (
+                                getBlockOrder(a) ??
+                                Number.MAX_SAFE_INTEGER
+                            ) -
+                            (
+                                getBlockOrder(b) ??
+                                Number.MAX_SAFE_INTEGER
+                            )
+                    );
+                }
+            );
+
+            setLastDisplayedOrder(
+                currentOrder
+            );
+
+            return;
+        }
+
+        moveDisplayedBlockToMissing(
+            block
+        );
+
+        setLastDisplayedOrder(
+            currentOrder
+        );
+    }
+
+    function toggleMissingBlock(
+        block: ArticleBlock,
+        shiftKey: boolean
+    ) {
+        const currentOrder =
+            getBlockOrder(block);
+
+        /*
+         * Shift-click:
+         * select everything between the
+         * previous click and this click.
+         */
+        if (
+            shiftKey &&
+            lastMissingOrder !== null &&
+            currentOrder !== undefined
+        ) {
+            const range =
+                getBlockRange(
+                    likelyMissing,
+                    lastMissingOrder,
+                    currentOrder
                 );
+
+            setSelectedBlocks(
+                current => {
+                    const existing =
+                        new Set(
+                            current.map(
+                                candidate =>
+                                    candidate.id
+                            )
+                        );
+
+                    const newBlocks =
+                        range.filter(
+                            candidate =>
+                                !existing.has(
+                                    candidate.id
+                                )
+                        );
+
+                    return [
+                        ...current,
+                        ...newBlocks,
+                    ];
+                }
+            );
+
+            setLastMissingOrder(
+                currentOrder
+            );
+
+            return;
+        }
+
+        /*
+         * Normal click:
+         * toggle this one block.
+         */
+        setSelectedBlocks(
+            current => {
+                const isSelected =
+                    current.some(
+                        selected =>
+                            selected.id ===
+                            block.id
+                    );
+
+                if (isSelected) {
+                    return current.filter(
+                        selected =>
+                            selected.id !==
+                            block.id
+                    );
+                }
+
+                return [
+                    ...current,
+                    block,
+                ];
             }
+        );
 
-            return [
-                ...current,
-                block,
-            ];
-        });
-
-        if (block.sourceIndex !== undefined) {
-            setLastSelectedSourceIndex(
-                block.sourceIndex
+        /*
+         * Remember this block's actual
+         * display position for the next
+         * Shift-click.
+         */
+        if (
+            currentOrder !== undefined
+        ) {
+            setLastMissingOrder(
+                currentOrder
             );
         }
     }
@@ -468,8 +638,20 @@ function App() {
         return lines.join("\n");
     }
 
-    function openBlockEditor(block: ArticleBlock) {
+    function openBlockEditor(
+        block: ArticleBlock
+    ) {
         setEditingBlock(block);
+
+        if (block.type === "table") {
+            setEditedHtml(
+                formatHtml(
+                    `<table>${block.html ?? ""}</table>`
+                )
+            );
+
+            return;
+        }
 
         setEditedHtml(
             formatHtml(block.html ?? "")
@@ -705,7 +887,10 @@ function App() {
                             {destination === "wallabag" &&
                                 (
                                     <div className="articleInfo">
-                                        <input className="articleTitleBox" type="text" value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} />
+                                        <TitleInput
+                                            value={articleTitle}
+                                            onCommit={setArticleTitle}
+                                        />
                                         <input
                                             className="publishDateBox"
                                             type="datetime-local"
@@ -718,7 +903,10 @@ function App() {
                                                 );
                                             }}
                                         />
-                                        <input className="articleAuthorsBox" type="text" placeholder="Authors" value={authors} onChange={(e) => setAuthors(e.target.value)} />
+                                        <AuthorsInput
+                                            value={authors}
+                                            onCommit={setAuthors}
+                                        />
                                     </div>
                                 )}
                         </div>
@@ -726,14 +914,19 @@ function App() {
                         <div className="articleBlocksList">
                             {previewBlocks.map((block) => {
                                 if (destination === "wallabag" &&
-                                    block.sourceIndex !== undefined) {
+                                    block.id !== "preview-title") {
                                     return (
                                         <div
                                             key={block.id}
                                             className="removableDisplayedBlock"
-                                            onClick={() =>
-                                                moveDisplayedBlockToMissing(block)
-                                            }
+                                            onClick={(e) => {
+                                                e.preventDefault();
+
+                                                toggleDisplayedBlock(
+                                                    block,
+                                                    e.shiftKey
+                                                );
+                                            }}
                                         >
                                             <ArticleBlockView block={block} />
 
@@ -793,7 +986,7 @@ function App() {
                                             block={block}
                                             selected={selectedBlocks.some(
                                                 selected =>
-                                                    selected.sourceIndex === block.sourceIndex
+                                                    selected.id === block.id
                                             )}
                                             onToggle={(block, shiftKey) =>
                                                 toggleMissingBlock(
@@ -812,22 +1005,27 @@ function App() {
                                 </summary>
 
                                 <div className="missingBlocksList">
-                                    {likelyJunk.map((block) => (
-                                        <MissingBlockView
-                                            key={block.id}
-                                            block={block}
-                                            selected={selectedBlocks.some(
-                                                selected =>
-                                                    selected.sourceIndex === block.sourceIndex
-                                            )}
-                                            onToggle={(block, shiftKey) =>
-                                                toggleMissingBlock(
-                                                    block,
-                                                    shiftKey
+                                    {likelyJunk
+                                        .filter(
+                                            block =>
+                                                !selectedBlocks.some(
+                                                    selected =>
+                                                        selected.id === block.id
                                                 )
-                                            }
-                                        />
-                                    ))}
+                                        )
+                                        .map((block) => (
+                                            <MissingBlockView
+                                                key={block.id}
+                                                block={block}
+                                                selected={false}
+                                                onToggle={(block, shiftKey) =>
+                                                    toggleMissingBlock(
+                                                        block,
+                                                        shiftKey
+                                                    )
+                                                }
+                                            />
+                                        ))}
                                 </div>
                             </details>
                         )}
@@ -876,16 +1074,44 @@ function App() {
             {editingBlock && (
                 <div
                     className="editBlockOverlay"
-                    onClick={() => {
-                        setEditingBlock(null);
-                        setEditedHtml("");
+                    onMouseDown={(e) => {
+                        /*
+                         * Only mark this as a backdrop click
+                         * if the mouse was originally pressed
+                         * directly on the backdrop.
+                         */
+                        if (
+                            e.target === e.currentTarget
+                        ) {
+                            e.currentTarget.dataset
+                                .backdropMouseDown = "true";
+                        } else {
+                            e.currentTarget.dataset
+                                .backdropMouseDown = "false";
+                        }
+                    }}
+                    onMouseUp={(e) => {
+                        const startedOnBackdrop =
+                            e.currentTarget.dataset
+                                .backdropMouseDown === "true";
+
+                        const endedOnBackdrop =
+                            e.target === e.currentTarget;
+
+                        if (
+                            startedOnBackdrop &&
+                            endedOnBackdrop
+                        ) {
+                            setEditingBlock(null);
+                            setEditedHtml("");
+                        }
+
+                        delete e.currentTarget.dataset
+                            .backdropMouseDown;
                     }}
                 >
                     <div
                         className="editBlockModal"
-                        onClick={(e) =>
-                            e.stopPropagation()
-                        }
                     >
                         <h2>Edit raw HTML</h2>
 

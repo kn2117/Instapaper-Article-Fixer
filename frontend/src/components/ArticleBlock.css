@@ -3,7 +3,8 @@
 .imageBlock,
 .unorderedListBlock,
 .orderedListBlock,
-.blockquoteBlock {
+.blockquoteBlock,
+.tableBlock {
     border-radius: 20px;
     padding: 10px;
     box-shadow: 0 0 5px #aaa;
@@ -14,8 +15,28 @@
 
     /* Do not use margins for block spacing */
     margin: 0;
+    cursor:pointer;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
+.paragraphBlock:hover,
+.headerBlock:hover,
+.imageBlock:hover,
+.unorderedListBlock:hover,
+.orderedListBlock:hover,
+.blockquoteBlock:hover,
+.tableBlock:hover,
+
+.removableDisplayedBlock:hover .paragraphBlock,
+.removableDisplayedBlock:hover .headerBlock,
+.removableDisplayedBlock:hover .imageBlock,
+.removableDisplayedBlock:hover .unorderedListBlock,
+.removableDisplayedBlock:hover .orderedListBlock,
+.removableDisplayedBlock:hover .blockquoteBlock,
+.removableDisplayedBlock:hover .tableBlock {
+    box-shadow: 0 0 20px #aaa;
+}
 
 .imageBlock {
     width: fit-content;
@@ -101,6 +122,10 @@
     transition: opacity 0.15s;
 
     box-shadow: 0px 0px 5px #aaa;
+}
+
+.openOriginalImage:hover {
+    box-shadow: 0px 0px 20px #aaa;
 }
 
 .imageBlock {

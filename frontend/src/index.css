@@ -92,11 +92,13 @@
 }
 
 .displayedBlocks {
-    flex: 3;
+    flex: 3 1 0;
+    min-width: 0;
 }
 
 .missingBlocks {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .loadingOverlay {
@@ -310,6 +312,10 @@
     box-shadow: 0px 0px 5px #aaa;
 }
 
+.editBlockButton:hover {
+    box-shadow: 0px 0px 20px #aaa;
+}
+
 .removableDisplayedBlock:hover .editBlockButton {
     opacity: 1;
 }
@@ -373,6 +379,11 @@
     transition: opacity 0.15s;
 
     box-shadow: 0px 0px 5px #aaa;
+}
+
+.openThumbnailSource:hover,
+.openThumbnailChoiceSource:hover {
+    box-shadow: 0px 0px 20px #aaa;
 }
 
 .thumbnailPreviewWrapper:hover

@@ -14,4 +14,5 @@ export type ArticleBlock = {
     category?: MissingBlockCategory;
     inHeaderOrFooter?: boolean;
     id?: string
+    displayOrder?: number;
 };

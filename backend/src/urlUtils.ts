@@ -924,7 +924,8 @@ export async function harvestArticleImages(
 
 export async function prepareWallabagImages(
     imageUrls: string[],
-    articleUrl: string
+    articleUrl: string,
+    allowBrowserHarvest = true
 ): Promise<Map<string, string>> {
     const results =
         new Map<string, string>();
@@ -971,7 +972,14 @@ export async function prepareWallabagImages(
         `${stillMissing.length} images still missing; ` +
         "starting browser harvest"
     );
+    if (!allowBrowserHarvest) {
+        console.warn(
+            `${stillMissing.length} images still missing; ` +
+            "skipping browser harvest for extension article"
+        );
 
+        return results;
+    }
     /*
      * Only now pay the Playwright cost.
      */
@@ -988,13 +996,13 @@ export async function prepareWallabagImages(
      */
     for (const imageUrl of stillMissing) {
         const {
-    destinationDir,
-    destination,
-    wallabagUrl,
-} = await getWallabagImageInfo(
-    imageUrl,
-    articleUrl
-);
+            destinationDir,
+            destination,
+            wallabagUrl,
+        } = await getWallabagImageInfo(
+            imageUrl,
+            articleUrl
+        );
 
         /*
          * Something may already have appeared while

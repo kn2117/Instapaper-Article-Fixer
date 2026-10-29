@@ -303,16 +303,6 @@ ext.action.onClicked.addListener(
                             url: location.href,
                             html: clone.outerHTML,
                             thumbnailUrl,
-
-                            images: [
-                                ...Array.from(document.images)
-                                    .map(img => img.currentSrc || img.src)
-                                    .filter(Boolean),
-
-                                ...(thumbnailUrl
-                                    ? [thumbnailUrl]
-                                    : []),
-                            ],
                         };
                     },
                 });
@@ -320,35 +310,6 @@ ext.action.onClicked.addListener(
             if (!result) {
                 return;
             }
-
-            const uniqueImages =
-                [...new Set(result.images)];
-
-            const batchSize = 6;
-
-            for (
-                let i = 0;
-                i < uniqueImages.length;
-                i += batchSize
-            ) {
-                const batch =
-                    uniqueImages.slice(
-                        i,
-                        i + batchSize
-                    );
-
-                await Promise.allSettled(
-                    batch.map(cacheOneImage)
-                );
-            }
-
-            console.log(
-                "Finished caching extension images"
-            );
-
-            console.log(
-                "Sending article HTML to backend"
-            );
 
             const response =
                 await fetch(
@@ -384,7 +345,44 @@ ext.action.onClicked.addListener(
 
             const {
                 id,
+                imageUrls = [],
             } = await response.json();
+
+            const uniqueImages =
+                [
+                    ...new Set(
+                        imageUrls
+                    ),
+                ];
+
+            console.log(
+                "Caching article images:",
+                uniqueImages.length
+            );
+
+            const batchSize = 6;
+
+            for (
+                let i = 0;
+                i < uniqueImages.length;
+                i += batchSize
+            ) {
+                const batch =
+                    uniqueImages.slice(
+                        i,
+                        i + batchSize
+                    );
+
+                await Promise.allSettled(
+                    batch.map(
+                        cacheOneImage
+                    )
+                );
+            }
+
+            console.log(
+                "Finished caching article images"
+            );
 
             await ext.tabs.create({
                 url:

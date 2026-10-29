@@ -19,12 +19,14 @@ function MissingBlockView({
     return (
         <div
             className={`missingBlock ${selected ? "selected" : ""}`}
-            onClick={(e) =>
+            onClick={(e) => {
+                e.preventDefault();
+
                 onToggle(
                     block,
                     e.shiftKey
-                )
-            }
+                );
+            }}
         >
             <ArticleBlockView block={block} />
         </div>
